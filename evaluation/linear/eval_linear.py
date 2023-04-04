@@ -24,10 +24,11 @@ import paddle.io as io
 import paddle.nn as nn
 import paddle.optimizer as optim
 import paddle.vision.transforms as T
-from dataset import ImageFolder
 
-from models import LinearClassifier
+import models
 import utils
+from dataset import ImageFolder
+from models import LinearClassifier
 
 
 def eval_linear(args):

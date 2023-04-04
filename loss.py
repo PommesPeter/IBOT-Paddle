@@ -2,7 +2,6 @@ import numpy as np
 from paddle import nn
 import paddle
 import paddle.nn.functional as F
-import paddle.distributed as dist
 
 
 class IBOTLoss(nn.Layer):
@@ -84,6 +83,7 @@ class IBOTLoss(nn.Layer):
         total_loss2 = total_loss2 / n_loss_terms2 * self.lambda2
         total_loss = dict(cls=total_loss1, patch=total_loss2, loss=total_loss1 + total_loss2)
         self.update_center(teacher_cls, teacher_patch)
+
         return total_loss
 
     @paddle.no_grad()
