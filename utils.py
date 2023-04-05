@@ -626,7 +626,7 @@ def concat_all_gather(tensor):
         for _ in range(dist.get_world_size())]
     dist.all_gather(tensors_gather, tensor, sync_op=False)
 
-    output = paddle.cat(tensors_gather, dim=0)
+    output = paddle.concat(tensors_gather, axis=0)
     return output
 
 
