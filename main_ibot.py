@@ -418,9 +418,9 @@ def train_one_epoch(
         probs1 = teacher_output[0].chunk(args.global_crops_number)
         probs2 = student_output[0].chunk(args.global_crops_number)
         
-        pred1 = utils.concat_all_gather(probs1[0].max(dim=1)[1]) 
-        pred2 = utils.concat_all_gather(probs2[1].max(dim=1)[1])
-        
+        pred1 = utils.concat_all_gather(paddle.max(probs1[0],axis=1)[1])
+        pred2 = utils.concat_all_gather(paddle.max(probs2[1],axis=1)[1])
+
         acc = (pred1 == pred2).sum() / pred1.size(0)
         pred_labels.append(pred1)
         real_labels.append(utils.concat_all_gather(labels))
