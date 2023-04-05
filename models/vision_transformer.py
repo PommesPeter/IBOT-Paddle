@@ -195,8 +195,8 @@ class PatchEmbed(nn.Layer):
 
     def forward(self, x):
         B, C, H, W = x.shape
-        assert H == self.img_size[0] and W == self.img_size[1], \
-            f"Input image size ({H}*{W}) doesn't match model ({self.img_size[0]}*{self.img_size[1]})."
+        # assert H == self.img_size[0] and W == self.img_size[1], \
+        #     f"Input image size ({H}*{W}) doesn't match model ({self.img_size[0]}*{self.img_size[1]})."
 
         x = self.proj(x).flatten(2).transpose((0, 2, 1))
         return x
@@ -282,10 +282,13 @@ class VisionTransformer(nn.Layer):
         # B = x.shape[0]
         B = paddle.shape(x)[0]
         x = self.patch_embed(x)
+        
         cls_tokens = self.cls_token.expand((B, -1, -1)).astype(x.dtype)
         x = paddle.concat((cls_tokens, x), axis=1)
         x = x + self.pos_embed
+        
         x = self.pos_drop(x)
+        
         for blk in self.blocks:
             x = blk(x)
         x = self.norm(x)

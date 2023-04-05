@@ -28,7 +28,6 @@ import time
 from collections import OrderedDict
 from tqdm import tqdm
 
-
 __all__ = ['get_weights_path_from_url']
 
 WEIGHTS_HOME = osp.expanduser("~/.paddleclas/weights")
@@ -48,22 +47,17 @@ def is_url(path):
 def get_weights_path_from_url(url, md5sum=None):
     """Get weights path from WEIGHT_HOME, if not exists,
     download it from url.
-
     Args:
         url (str): download url
         md5sum (str): md5 sum of download package
-    
+
     Returns:
         str: a local path to save downloaded weights.
-
     Examples:
         .. code-block:: python
-
             from paddle.utils.download import get_weights_path_from_url
-
             resnet18_pretrained_weight_url = 'https://paddle-hapi.bj.bcebos.com/models/resnet18.pdparams'
             local_weight_path = get_weights_path_from_url(resnet18_pretrained_weight_url)
-
     """
     path = get_path_from_url(url, WEIGHTS_HOME, md5sum)
     return path
@@ -85,13 +79,12 @@ def get_path_from_url(url,
     if file or directory specified by url is exists under
     root_dir, return the path directly, otherwise download
     from url and decompress it, return the path.
-
     Args:
         url (str): download url
         root_dir (str): root dir for downloading, it should be
                         WEIGHTS_HOME or DATASET_HOME
         md5sum (str): md5 sum of download package
-    
+
     Returns:
         str: a local path to save downloaded models & weights & datasets.
     """
@@ -101,13 +94,13 @@ def get_path_from_url(url,
     assert is_url(url), "downloading from {} not a url".format(url)
     # parse path after download to decompress under root_dir
     fullpath = _map_path(url, root_dir)
-    # Mainly used to solve the problem of downloading data from different 
-    # machines in the case of multiple machines. Different nodes will download 
+    # Mainly used to solve the problem of downloading data from different
+    # machines in the case of multiple machines. Different nodes will download
     # data, and the same node will only download data once.
     rank_id_curr_node = int(os.environ.get("PADDLE_RANK_IN_NODE", 0))
 
     if osp.exists(fullpath) and check_exist and _md5check(fullpath, md5sum):
-        logger.info("Found {}".format(fullpath))
+        print("Found {}".format(fullpath))
     else:
         if rank_id_curr_node == 0:
             fullpath = _download(url, root_dir, md5sum)
@@ -126,7 +119,6 @@ def get_path_from_url(url,
 def _download(url, path, md5sum=None):
     """
     Download from url, save to path.
-
     url (str): download url
     path (str): download to given path
     """
@@ -144,14 +136,14 @@ def _download(url, path, md5sum=None):
             raise RuntimeError("Download from {} failed. "
                                "Retry limit reached".format(url))
 
-        logger.info("Downloading {} from {}".format(fname, url))
+        print("Downloading {} from {}".format(fname, url))
 
         try:
             req = requests.get(url, stream=True)
         except Exception as e:  # requests.exceptions.ConnectionError
-            logger.info(
+            print(
                 "Downloading {} from {} failed {} times with exception {}".
-                format(fname, url, retry_cnt + 1, str(e)))
+                    format(fname, url, retry_cnt + 1, str(e)))
             time.sleep(1)
             continue
 
@@ -183,7 +175,7 @@ def _md5check(fullname, md5sum=None):
     if md5sum is None:
         return True
 
-    logger.info("File {} md5 checking...".format(fullname))
+    print("File {} md5 checking...".format(fullname))
     md5 = hashlib.md5()
     with open(fullname, 'rb') as f:
         for chunk in iter(lambda: f.read(4096), b""):
@@ -191,8 +183,8 @@ def _md5check(fullname, md5sum=None):
     calc_md5sum = md5.hexdigest()
 
     if calc_md5sum != md5sum:
-        logger.info("File {} md5 check failed, {}(calc) != "
-                    "{}(base)".format(fullname, calc_md5sum, md5sum))
+        print("File {} md5 check failed, {}(calc) != "
+              "{}(base)".format(fullname, calc_md5sum, md5sum))
         return False
     return True
 
@@ -201,7 +193,7 @@ def _decompress(fname):
     """
     Decompress for zip and tar file
     """
-    logger.info("Decompressing {}...".format(fname))
+    print("Decompressing {}...".format(fname))
 
     # For protecting decompressing interupted,
     # decompress to fpath_tmp directory firstly, if decompress
