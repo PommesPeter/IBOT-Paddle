@@ -91,7 +91,7 @@ class IBOTLoss(nn.Layer):
         """
         Update center used for teacher output.
         """
-        
+
         cls_center = paddle.sum(teacher_cls, axis=0, keepdim=True)
         # dist.all_reduce(cls_center)
         # cls_center = cls_center / (len(teacher_cls) * dist.get_world_size())
