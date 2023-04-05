@@ -28,7 +28,6 @@ import time
 from collections import OrderedDict
 from tqdm import tqdm
 
-from . import logger
 
 __all__ = ['get_weights_path_from_url']
 

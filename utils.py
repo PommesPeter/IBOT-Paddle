@@ -139,7 +139,7 @@ def restart_from_checkpoint(ckp_path, run_variables=None, **kwargs):
     print("Found checkpoint at {}".format(ckp_path))
 
     # open checkpoint file
-    checkpoint = torch.load(ckp_path, map_location="cpu")
+    checkpoint = paddle.load(ckp_path)
 
     # key is what to look for in the checkpoint file
     # value is the object to load
@@ -534,7 +534,7 @@ class LARS(paddle.optimizer.Optimizer):
                         lars_adaptation_filter=lars_adaptation_filter)
         super().__init__(params, defaults)
 
-    @torch.no_grad()
+    @paddle.no_grad()
     def step(self):
         for g in self.param_groups:
             for p in g['params']:
