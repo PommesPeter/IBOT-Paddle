@@ -139,7 +139,7 @@ def restart_from_checkpoint(ckp_path, run_variables=None, **kwargs):
     print("Found checkpoint at {}".format(ckp_path))
 
     # open checkpoint file
-    checkpoint = torch.load(ckp_path, map_location="cpu")
+    checkpoint = paddle.load(ckp_path)
 
     # key is what to look for in the checkpoint file
     # value is the object to load
@@ -446,10 +446,10 @@ def init_distributed_mode(args):
     # launched with submitit on a slurm cluster
     elif 'SLURM_PROCID' in os.environ:
         args.rank = int(os.environ['SLURM_PROCID'])
-        args.gpu = args.rank % torch.cuda.device_count()
+        args.gpu = args.rank % paddle.device.cuda.device_count()
     # launched naively with `python main_dino.py`
     # we manually add MASTER_ADDR and MASTER_PORT to env variables
-    elif torch.cuda.is_available():
+    elif len(paddle.device.get_available_device()) > 0:
         print('Will run the code on one GPU.')
         args.rank, args.gpu, args.world_size = 0, 0, 1
         os.environ['MASTER_ADDR'] = '127.0.0.1'
@@ -465,7 +465,7 @@ def init_distributed_mode(args):
         rank=args.rank,
     )
 
-    torch.cuda.set_device(args.gpu)
+    # torch.cuda.set_device(args.gpu)
     print('| distributed init (rank {}): {}'.format(
         args.rank, args.dist_url), flush=True)
     dist.barrier()
@@ -534,7 +534,7 @@ class LARS(paddle.optimizer.Optimizer):
                         lars_adaptation_filter=lars_adaptation_filter)
         super().__init__(params, defaults)
 
-    @torch.no_grad()
+    @paddle.no_grad()
     def step(self):
         for g in self.param_groups:
             for p in g['params']:
@@ -675,10 +675,10 @@ class PCA():
         # input is from torch and is on GPU
         if x.is_cuda:
             if self.mean is not None:
-                x -= torch.cuda.FloatTensor(self.mean)
-            return torch.mm(torch.cuda.FloatTensor(self.dvt), x.transpose(0, 1)).transpose(0, 1)
+                x -= paddle.to_tensor(self.mean)
+            return paddle.mm(paddle.to_tensor(self.dvt), x.transpose(0, 1)).transpose(0, 1)
 
-        # input if from torch, on CPU
+        # input if from paddle, on CPU
         if self.mean is not None:
-            x -= torch.FloatTensor(self.mean)
-        return torch.mm(torch.FloatTensor(self.dvt), x.transpose(0, 1)).transpose(0, 1)
+            x -= paddle.to_tensor(self.mean)
+        return paddle.mm(paddle.to_tensor(self.dvt), x.transpose(0, 1)).transpose(0, 1)

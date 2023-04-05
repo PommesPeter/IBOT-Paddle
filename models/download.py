@@ -28,8 +28,6 @@ import time
 from collections import OrderedDict
 from tqdm import tqdm
 
-from . import logger
-
 __all__ = ['get_weights_path_from_url']
 
 WEIGHTS_HOME = osp.expanduser("~/.paddleclas/weights")
@@ -108,7 +106,7 @@ def get_path_from_url(url,
     rank_id_curr_node = int(os.environ.get("PADDLE_RANK_IN_NODE", 0))
 
     if osp.exists(fullpath) and check_exist and _md5check(fullpath, md5sum):
-        logger.info("Found {}".format(fullpath))
+        print("Found {}".format(fullpath))
     else:
         if rank_id_curr_node == 0:
             fullpath = _download(url, root_dir, md5sum)
@@ -145,12 +143,12 @@ def _download(url, path, md5sum=None):
             raise RuntimeError("Download from {} failed. "
                                "Retry limit reached".format(url))
 
-        logger.info("Downloading {} from {}".format(fname, url))
+        print("Downloading {} from {}".format(fname, url))
 
         try:
             req = requests.get(url, stream=True)
         except Exception as e:  # requests.exceptions.ConnectionError
-            logger.info(
+            print(
                 "Downloading {} from {} failed {} times with exception {}".
                 format(fname, url, retry_cnt + 1, str(e)))
             time.sleep(1)
@@ -184,7 +182,7 @@ def _md5check(fullname, md5sum=None):
     if md5sum is None:
         return True
 
-    logger.info("File {} md5 checking...".format(fullname))
+    print("File {} md5 checking...".format(fullname))
     md5 = hashlib.md5()
     with open(fullname, 'rb') as f:
         for chunk in iter(lambda: f.read(4096), b""):
@@ -192,7 +190,7 @@ def _md5check(fullname, md5sum=None):
     calc_md5sum = md5.hexdigest()
 
     if calc_md5sum != md5sum:
-        logger.info("File {} md5 check failed, {}(calc) != "
+        print("File {} md5 check failed, {}(calc) != "
                     "{}(base)".format(fullname, calc_md5sum, md5sum))
         return False
     return True
@@ -202,7 +200,7 @@ def _decompress(fname):
     """
     Decompress for zip and tar file
     """
-    logger.info("Decompressing {}...".format(fname))
+    print("Decompressing {}...".format(fname))
 
     # For protecting decompressing interupted,
     # decompress to fpath_tmp directory firstly, if decompress

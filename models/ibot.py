@@ -315,132 +315,56 @@ class IBOTSwinTransformer(SwinTransformer):
         return x
 
 
-def _load_pretrained(
-    pretrained,
-    model,
-    model_url,
-    use_ssld=False,
-    use_imagenet22k_pretrained=False,
-    use_imagenet22kto1k_pretrained=False,
-):
-    if pretrained is False:
-        pass
-    elif pretrained is True:
-        load_dygraph_pretrain_from_url(
-            model,
-            model_url,
-            use_ssld=use_ssld,
-            use_imagenet22k_pretrained=use_imagenet22k_pretrained,
-            use_imagenet22kto1k_pretrained=use_imagenet22kto1k_pretrained,
-        )
-    elif isinstance(pretrained, str):
-        load_dygraph_pretrain(model, pretrained)
-    else:
-        raise RuntimeError(
-            "pretrained type is not available. Please use `string` or `boolean` type."
-        )
-
-
-def IBOT_ViT_small_patch16_224(pretrained=False, use_ssld=False,in_dim=384,out_dim=8192,patch_out_dim=8192,norm=None,act_layer=nn.GELU,norm_last_layer=False,shared_head=True,masked_im_modeling=False, **kwargs):
-    backbone = IBOTVisionTransformer(
-        patch_size=16,
+def vit_small(patch_size=16, **kwargs):
+    model = IBOTVisionTransformer(
+        patch_size=patch_size,
         embed_dim=384,
         depth=12,
         num_heads=6,
         mlp_ratio=4,
-        qk_scale=(384 // 6) ** -0.5,
-        return_all_tokens=True,
-        masked_im_modeling=masked_im_modeling,
         **kwargs
-    )
-    _load_pretrained(
-        pretrained, backbone, MODEL_URLS["IBOT_ViT_small_patch16_224"], use_ssld=use_ssld
-    )
-    model = MultiCropWrapper(
-        backbone,
-        IBOTHead(in_dim=in_dim,out_dim=out_dim,patch_out_dim=patch_out_dim,norm=norm,act_layer=act_layer,norm_last_layer=norm_last_layer,shared_head=shared_head)
     )
     return model
 
 
-def IBOT_ViT_base_patch16_224(pretrained=False, use_ssld=False, **kwargs):
-    backbone = IBOTVisionTransformer(
-        patch_size=16,
+def vit_base(patch_size=16, **kwargs):
+    model = IBOTVisionTransformer(
+        patch_size=patch_size,
         embed_dim=768,
         depth=12,
         num_heads=12,
         mlp_ratio=4,
-        qk_scale=(768 // 12) ** -0.5,
+        qkv_bias=True
         **kwargs
     )
-    _load_pretrained(
-        pretrained, backbone, MODEL_URLS["IBOT_ViT_base_patch16_224"], use_ssld=use_ssld
-    )
-    model = MultiCropWrapper(
-        backbone,
-        IBOTHead(in_dim=768, out_dim=8192, patch_out_dim=8192, norm=None, act_layer=nn.GELU, norm_last_layer=False,
-                 shared_head=True)
-    )
+
     return model
 
 
-def IBOT_ViT_large_patch16_224(pretrained=False, use_ssld=False, **kwargs):
-    backbone = IBOTVisionTransformer(
-        patch_size=16,
+def vit_large(patch_size=16, **kwargs):
+    model = IBOTVisionTransformer(
+        patch_size=patch_size,
         embed_dim=1024,
         depth=24,
         num_heads=16,
         mlp_ratio=4,
-        qk_scale=(1024 // 12) ** -0.5,
+        qkv_bias=True
         **kwargs
     )
-    _load_pretrained(
-        pretrained, backbone, MODEL_URLS["IBOT_ViT_large_patch16_224"], use_ssld=use_ssld
-    )
-    model = MultiCropWrapper(
-        backbone,
-        IBOTHead(in_dim=1024, out_dim=8192, patch_out_dim=8192, norm=None, act_layer=nn.GELU, norm_last_layer=False,
-                 shared_head=True)
-    )
+
     return model
 
 
-def IBOT_Swin_tiny_windows7_224(pretrained=False, use_ssld=False, **kwargs):
-    backbone = IBOTSwinTransformer(
+def swin_tiny(window_size=7, **kwargs):
+    model = IBOTSwinTransformer(
+        window_size=window_size,
         img_size=224,
         embed_dim=96,
         depths=[2, 2, 6, 2],
         num_heads=[3, 6, 12, 24],
-        window_size=7,
         mlp_ratio=4,
+        qkv_bias=True,
+        drop_path_rate=kwargs.pop('drop_path_rate', 0.1),
         **kwargs
-    )
-    _load_pretrained(
-        pretrained, backbone, MODEL_URLS["IBOT_Swin_tiny_windows7_224"], use_ssld=use_ssld
-    )
-    model = MultiCropWrapper(
-        backbone,
-        IBOTHead(in_dim=96, out_dim=8192, patch_out_dim=8192, norm=None, act_layer=nn.GELU, norm_last_layer=False,
-                 shared_head=True)
-    )
-    return model
-
-def IBOT_Swin_tiny_windows14_224(pretrained=False, use_ssld=False, **kwargs):
-    backbone = IBOTSwinTransformer(
-        img_size=224,
-        embed_dim=96,
-        depths=[2, 2, 6, 2],
-        num_heads=[3, 6, 12, 24],
-        window_size=14,
-        mlp_ratio=4,
-        **kwargs
-    )
-    _load_pretrained(
-        pretrained, backbone, MODEL_URLS["IBOT_Swin_tiny_windows7_224"], use_ssld=use_ssld
-    )
-    model = MultiCropWrapper(
-        backbone,
-        IBOTHead(in_dim=96, out_dim=8192, patch_out_dim=8192, norm=None, act_layer=nn.GELU, norm_last_layer=False,
-                 shared_head=True)
     )
     return model

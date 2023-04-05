@@ -144,7 +144,7 @@ def get_args_parser():
         Used for small local view cropping of multi-crop.""")
 
     # Misc
-    parser.add_argument('--resume_path', default=None, help="""Path to load checkpoints to resume training.""")
+    parser.add_argument('--resume_path', default="", help="""Path to load checkpoints to resume training.""")
     parser.add_argument('--data_path', default='/path/to/imagenet/train/', type=str,
         help='Please specify path to the ImageNet training data.')
     parser.add_argument('--output_dir', default=".", type=str, help='Path to save logs and checkpoints.')
@@ -181,7 +181,7 @@ def train_ibot(args):
         pred_shape=args.pred_shape,
         pred_start_epoch=args.pred_start_epoch)
     sampler = paddle.io.DistributedBatchSampler(
-        dataset, args.batch_size, shuffle=True, drop_last=True
+        dataset, args.batch_size_per_gpu, shuffle=True, drop_last=True
     )
     data_loader = paddle.io.DataLoader(
         dataset, batch_sampler=sampler, num_workers=args.num_workers
@@ -282,7 +282,7 @@ def train_ibot(args):
     params_groups = utils.get_params_groups(student)
     clip = paddle.nn.ClipGradByGlobalNorm(args.clip_grad) if args.clip_grad != 0 else None
 
-    opt = paddle.optimizer.AdamW(learning_rate=args.base_lr, parameters=params_groups, grad_clip=clip)
+    opt = paddle.optimizer.AdamW(learning_rate=args.lr, parameters=params_groups, grad_clip=clip)
     fp16_scaler = None
     if args.use_fp16:
         # be consistent with pytorch default value.
@@ -290,7 +290,7 @@ def train_ibot(args):
 
     # ============ init schedulers ... ============
     lr_schedule = utils.cosine_scheduler(
-        args.lr * args.batch_size * dist.get_world_size() / 256,  # linear scaling rule
+        args.lr * args.batch_size_per_gpu * dist.get_world_size() / 256,  # linear scaling rule
         args.min_lr,
         args.epochs, len(data_loader),
         warmup_epochs=args.warmup_epochs,
@@ -404,9 +404,9 @@ def train_one_epoch(
             teacher_output = teacher(images[:args.global_crops_number])  # only the 2 global views pass through the teacher
             student_output = student(images[:args.global_crops_number], mask=masks[:args.global_crops_number]) # all views pass through the student
             
-            student.module.backbone.masked_im_modeling = False
+            student.sublayers()[0].backbone.masked_im_modeling = False
             student_local_cls = student(images[args.global_crops_number:])[0] if len(images) > args.global_crops_number else None
-            student.module.backbone.masked_im_modeling = args.use_masked_im_modeling
+            student.sublayers()[0].backbone.masked_im_modeling = args.use_masked_im_modeling
             
             all_loss = ibot_loss(student_output, teacher_output, student_local_cls, masks, epoch)
             loss = all_loss.pop('loss')
