@@ -620,10 +620,15 @@ def has_batchnorms(model: nn.Layer):
 def concat_all_gather(tensor):
     """
     Performs all_gather operation on the provided tensors.
-    *** Warning ***: torch.distributed.all_gather has no gradient.
+    *** Warning ***: paddle.distributed.all_gather has no gradient.
     """
     tensors_gather = [paddle.ones_like(tensor)
         for _ in range(dist.get_world_size())]
+    print("===" * 30)
+    print(tensors_gather)
+    print("***" * 30)
+    print(tensor)
+    print("===" * 30)
     dist.all_gather(tensors_gather, tensor, sync_op=False)
 
     output = paddle.concat(tensors_gather, axis=0)
@@ -672,7 +677,7 @@ class PCA():
                 x -= self.mean
             return np.dot(self.dvt, x.T).T
 
-        # input is from torch and is on GPU
+        # input is from paddle and is on GPU
         if x.is_cuda:
             if self.mean is not None:
                 x -= paddle.to_tensor(self.mean)

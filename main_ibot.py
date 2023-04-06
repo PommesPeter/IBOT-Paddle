@@ -100,7 +100,7 @@ def get_args_parser():
         help='Number of warmup epochs for the teacher temperature (Default: 30).')
 
     # Training/Optimization parameters
-    parser.add_argument('--use_fp16', type=utils.bool_flag, default=True, help="""Whether or not
+    parser.add_argument('--use_fp16', type=utils.bool_flag, default=False, help="""Whether or not
         to use half precision for training. Improves training time and memory requirements,
         but can provoke instability and slight decay of performance. We recommend disabling
         mixed precision if the loss is unstable, if reducing the patch size or if training with bigger ViTs.""")
@@ -418,10 +418,10 @@ def train_one_epoch(
         probs1 = teacher_output[0].chunk(args.global_crops_number)
         probs2 = student_output[0].chunk(args.global_crops_number)
         
-        pred1 = utils.concat_all_gather(paddle.max(probs1[0],axis=1)[1])
-        pred2 = utils.concat_all_gather(paddle.max(probs2[1],axis=1)[1])
+        pred1 = utils.concat_all_gather(paddle.max(probs1[0], axis=1)[1])
+        pred2 = utils.concat_all_gather(paddle.max(probs2[1], axis=1)[1])
 
-        acc = (pred1 == pred2).sum() / pred1.size(0)
+        acc = (pred1 == pred2).sum() / pred1.shape[0]
         pred_labels.append(pred1)
         real_labels.append(utils.concat_all_gather(labels))
 
