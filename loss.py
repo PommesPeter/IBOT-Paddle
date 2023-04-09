@@ -2,7 +2,7 @@ import numpy as np
 from paddle import nn
 import paddle
 import paddle.nn.functional as F
-
+import paddle.distributed as dist
 
 class IBOTLoss(nn.Layer):
     def __init__(self, out_dim=8192, patch_out_dim=8192, ngcrops=2, nlcrops=0, warmup_teacher_temp=0.04,
@@ -83,7 +83,6 @@ class IBOTLoss(nn.Layer):
         total_loss2 = total_loss2 / n_loss_terms2 * self.lambda2
         total_loss = dict(cls=total_loss1, patch=total_loss2, loss=total_loss1 + total_loss2)
         self.update_center(teacher_cls, teacher_patch)
-
         return total_loss
 
     @paddle.no_grad()
@@ -91,15 +90,14 @@ class IBOTLoss(nn.Layer):
         """
         Update center used for teacher output.
         """
-
         cls_center = paddle.sum(teacher_cls, axis=0, keepdim=True)
-        # dist.all_reduce(cls_center)
-        # cls_center = cls_center / (len(teacher_cls) * dist.get_world_size())
-        cls_center = cls_center / (len(teacher_cls)* 1 )
+        dist.all_reduce(cls_center)
+        cls_center = cls_center / (len(teacher_cls) * dist.get_world_size())
+        # cls_center = cls_center / (len(teacher_cls)* 1 )
         self.center = self.center * self.center_momentum + cls_center * (1 - self.center_momentum)
 
         patch_center = paddle.sum(teacher_patch.mean(1), axis=0, keepdim=True)
-        # dist.all_reduce(patch_center)
-        # patch_center = patch_center / (len(teacher_patch) * dist.get_world_size())
-        patch_center = patch_center / (len(teacher_patch) * 1)
+        dist.all_reduce(patch_center)
+        patch_center = patch_center / (len(teacher_patch) * dist.get_world_size())
+        # patch_center = patch_center / (len(teacher_patch) * 1)
         self.center2 = self.center2 * self.center_momentum2 + patch_center * (1 - self.center_momentum2)

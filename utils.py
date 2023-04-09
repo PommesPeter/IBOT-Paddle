@@ -127,7 +127,8 @@ def cancel_gradients_last_layer(epoch, model, freeze_last_layer):
         return
     for n, p in model.named_parameters():
         if "last_layer" in n:
-            p.grad = None
+            p.clear_grad()
+            # p.grad = None
 
 
 def restart_from_checkpoint(ckp_path, run_variables=None, **kwargs):
@@ -227,7 +228,7 @@ class SmoothedValue(object):
         """
         if not is_dist_avail_and_initialized():
             return
-        t = paddle.tensor([self.count, self.total], dtype=paddle.float64, device='cuda')
+        t = paddle.to_tensor([self.count, self.total], dtype=paddle.float64)
         dist.barrier()
         dist.all_reduce(t)
         t = t.tolist()
@@ -236,12 +237,12 @@ class SmoothedValue(object):
 
     @property
     def median(self):
-        d = paddle.tensor(list(self.deque))
+        d = paddle.to_tensor(list(self.deque))
         return d.median().item()
 
     @property
     def avg(self):
-        d = paddle.tensor(list(self.deque), dtype=paddle.float32)
+        d = paddle.to_tensor(list(self.deque), dtype=paddle.float32)
         return d.mean().item()
 
     @property
@@ -284,7 +285,7 @@ def reduce_dict(input_dict, average=True):
         for k in sorted(input_dict.keys()):
             names.append(k)
             values.append(input_dict[k])
-        values = paddle.stack(values, dim=0)
+        values = paddle.stack(values, axis=0)
         dist.all_reduce(values)
         if average:
             values /= world_size
@@ -617,22 +618,26 @@ def has_batchnorms(model: nn.Layer):
     return False
 
 
+@paddle.no_grad()
 def concat_all_gather(tensor):
     """
     Performs all_gather operation on the provided tensors.
-    *** Warning ***: paddle.distributed.all_gather has no gradient.
+    *** Warning ***: torch.distributed.all_gather has no gradient.
     """
     tensors_gather = [paddle.ones_like(tensor)
         for _ in range(dist.get_world_size())]
-    print("===" * 30)
-    print(tensors_gather)
-    print("***" * 30)
-    print(tensor)
-    print("===" * 30)
     dist.all_gather(tensors_gather, tensor, sync_op=False)
 
     output = paddle.concat(tensors_gather, axis=0)
     return output
+
+    # if paddle.distributed.get_world_size() < 2:
+    #     return tensor
+    # tensors_gather = []
+    # paddle.distributed.all_gather(tensors_gather, tensor,sync_op=False)
+    #
+    # output = paddle.concat(tensors_gather, axis=0)
+    # return output
 
 
 class PCA():
