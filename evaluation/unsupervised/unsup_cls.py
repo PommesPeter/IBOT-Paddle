@@ -149,8 +149,8 @@ def eval_unsup(model, data_loader):
         pred_labels.append(pred)
         real_labels.append(utils.concat_all_gather(labels))
 
-    pred_labels = paddle.cat(pred_labels).cpu().detach().numpy()
-    real_labels = paddle.cat(real_labels).cpu().detach().numpy()
+    pred_labels = paddle.concat(pred_labels).cpu().detach().numpy()
+    real_labels = paddle.concat(real_labels).cpu().detach().numpy()
     nmi, ari, fscore, adjacc = eval_pred(real_labels, pred_labels, calc_acc=True)
     print("NMI: {}, ARI: {}, F: {}, ACC: {}".format(nmi, ari, fscore, adjacc))
 
