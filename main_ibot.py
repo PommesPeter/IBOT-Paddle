@@ -276,8 +276,8 @@ def train_one_epoch(
         # update weight decay and learning rate
         # compute global training iteration
         it = len(data_loader) * epoch + it # global training iteration
-        optimizer.set_lr(lr_schedule[it])
         for i, param_group in enumerate(optimizer._param_groups):
+            param_group["lr"] = lr_schedule[it]
             if i == 0: # only the first group is regularized
                 param_group["weight_decay"] = wd_schedule[it]
 
@@ -289,7 +289,8 @@ def train_one_epoch(
             student.sublayers()[0].backbone.masked_im_modeling = False
             student_local_cls = student(images[args.global_crops_number:])[0] if len(images) > args.global_crops_number else None
             student.sublayers()[0].backbone.masked_im_modeling = args.use_masked_im_modeling
-            
+
+            # print(student_output)
             all_loss = ibot_loss(student_output, teacher_output, student_local_cls, masks, epoch)
             loss = all_loss.pop('loss')
 
@@ -306,7 +307,6 @@ def train_one_epoch(
         # print(pred1 == pred2)
         # print(paddle.sum(pred1 == pred2),pred1.shape[0])
         acc = ((pred1 == pred2).sum())/ pred1.shape[0]
-        # print(acc)
         pred_labels.append(pred1)
         real_labels.append(utils.concat_all_gather(labels.cuda()))
 

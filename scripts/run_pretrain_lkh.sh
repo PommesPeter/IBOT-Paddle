@@ -1,4 +1,4 @@
-python -m paddle.distributed.launch --gpus="2,3" main_ibot.py \
+python -m paddle.distributed.launch --gpus="5,7" main_ibot.py \
     --patch_size 16 \
     --epochs 800 \
     --arch vit_small \

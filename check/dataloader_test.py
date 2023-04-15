@@ -1,34 +1,31 @@
-import numpy as np
-import paddle
 import os
 import sys
+from PIL import Image
+import numpy as np
+import paddle
+import torch
+from reprod_log import ReprodLogger, ReprodDiffHelper
+import paddle
+import sys
+from torchvision import transforms
+import math
+from check.forward_test import setup_seed
+from check.torch_utils import DataAugmentationiBOT, Torch_ImageFolderMask
+from dataset import ImageFolderMask
+from transforms import IBOTAugmentation, GaussianBlur, Solarization
+
 sys.path.append("../")
 sys.path.append("./")
 # import torch_model
 from models import vit_small, MultiCropWrapper, IBOTHead
-import torch
-from reprod_log import ReprodDiffHelper
 from reprod_log import ReprodLogger
 from collections import OrderedDict
 from loss import IBOTLoss
 import argparse
+from torchvision.datasets import ImageFolder
+import random
+import math
 
-def setup_seed(seed=10):
-    # import torch_model
-    import os
-    import numpy as np
-    import random
-    torch.manual_seed(seed)  # 为CPU设置随机种子
-    paddle.seed(seed)  # 为CPU设置随机种子
-    np.random.seed(seed)  # Numpy module.
-    random.seed(seed)  # Python random module.
-    # if torch_model.cuda.is_available():
-    #     # torch_model.backends.cudnn.benchmark = False
-    #     torch_model.backends.cudnn.deterministic = True
-    #     torch_model.cuda.manual_seed(seed)  # 为当前GPU设置随机种子
-    #     torch_model.cuda.manual_seed_all(seed)  # 为所有GPU设置随机种子
-    #     paddle.seed(seed)
-        #os.environ['PYTHONHASHSEED'] = str(seed)
 
 def get_args_parser():
     parser = argparse.ArgumentParser('iBOT', add_help=False)
@@ -123,7 +120,7 @@ def get_args_parser():
     parser.add_argument('--optimizer', default='adamw', type=str,
                         choices=['adamw', 'sgd', 'lars'],
                         help="""Type of optimizer. We recommend using adamw with ViTs.""")
-    parser.add_argument('--load_from', default="/data3/linkaihao/reproduce/IBOT/pretrained", help="""Path to load checkpoints to resume training.""")
+    parser.add_argument('--load_from', default=None, help="""Path to load checkpoints to resume training.""")
     parser.add_argument('--drop_path', type=float, default=0.1, help="""Drop path rate for student network.""")
 
     # Multi-crop parameters
@@ -141,9 +138,9 @@ def get_args_parser():
         Used for small local view cropping of multi-crop.""")
 
     # Misc
-    parser.add_argument('--data_path', default='/path/to/imagenet/train/', type=str,
+    parser.add_argument('--data_path', default='/data3/linkaihao/dataset/mini_imagenet-1k-duiqi/train/', type=str,
                         help='Please specify path to the ImageNet training data.')
-    parser.add_argument('--output_dir', default="/data3/linkaihao/reproduce/IBOT-Paddle/check/duiqi", type=str, help='Path to save logs and checkpoints.')
+    parser.add_argument('--output_dir', default=".", type=str, help='Path to save logs and checkpoints.')
     parser.add_argument('--saveckp_freq', default=20, type=int, help='Save checkpoint every x epochs.')
     parser.add_argument('--seed', default=0, type=int, help='Random seed.')
     parser.add_argument('--num_workers', default=10, type=int, help='Number of data loading workers per GPU.')
@@ -152,182 +149,128 @@ def get_args_parser():
     parser.add_argument("--local_rank", default=0, type=int, help="Please ignore and do not set this argument.")
     return parser
 
+# def build_paddle_transform():
+#     sys.path.insert(0, "./AlexNet_paddle/")
+#     import AlexNet_paddle.presets as presets
+#     paddle_transform = presets.ClassificationPresetEval(
+#         crop_size=224,
+#         resize_size=256, )
+#     sys.path.pop(0)
+#     return paddle_transform
+# def build_torch_transform():
+#     sys.path.insert(0, "./AlexNet_torch/")
+#     import AlexNet_torch.presets as presets
+#     torch_transform = presets.ClassificationPresetEval(
+#         crop_size=224,
+#         resize_size=256, )
+#     sys.path.pop(0)
+#
+#     return torch_transform
+# def test_transform():
+#     paddle_transform = build_paddle_transform()
+#     torch_transform = build_torch_transform()
+#     img = Image.open("./demo_image/ILSVRC2012_val_00006697.JPEG")
+#
+#     paddle_img = paddle_transform(img)
+#     torch_img = torch_transform(img)
+#
+#     np.testing.assert_allclose(paddle_img, torch_img)
+
+def build_paddle_data_pipeline():
+    pred_size = args.patch_size * 8 if 'swin' in args.arch else args.patch_size
+    transform = IBOTAugmentation(
+        args.global_crops_scale,
+        args.local_crops_scale,
+        args.global_crops_number,
+        args.local_crops_number,
+    )
+    dataset = ImageFolderMask(
+        args.data_path,
+        transform=transform,
+        patch_size=pred_size,
+        pred_ratio=args.pred_ratio,
+        pred_ratio_var=args.pred_ratio_var,
+        pred_aspect_ratio=(0.3, 1 / 0.3),
+        pred_shape=args.pred_shape,
+        pred_start_epoch=args.pred_start_epoch)
+    test_sampler = paddle.io.SequenceSampler(dataset)
+    sampler = paddle.io.BatchSampler(
+        sampler=test_sampler, batch_size=4
+    )
+    data_loader = paddle.io.DataLoader(
+        dataset, batch_sampler=sampler, num_workers=0
+    )
+
+    return dataset, data_loader
+
+
+def build_torch_data_pipeline():
+    transform = DataAugmentationiBOT(
+        args.global_crops_scale,
+        args.local_crops_scale,
+        args.global_crops_number,
+        args.local_crops_number,
+    )
+    pred_size = args.patch_size * 8 if 'swin' in args.arch else args.patch_size
+    dataset = Torch_ImageFolderMask(
+        args.data_path,
+        transform=transform,
+        patch_size=pred_size,
+        pred_ratio=args.pred_ratio,
+        pred_ratio_var=args.pred_ratio_var,
+        pred_aspect_ratio=(0.3, 1 / 0.3),
+        pred_shape=args.pred_shape,
+        pred_start_epoch=args.pred_start_epoch)
+    sampler = torch.utils.data.SequentialSampler(dataset)
+    data_loader = torch.utils.data.DataLoader(
+        dataset,
+        sampler=sampler,
+        batch_size=4,
+        num_workers=0,
+        pin_memory=True
+    )
+    return dataset, data_loader
+
+
+
+
+
+def test_data_pipeline():
+    diff_helper = ReprodDiffHelper()
+    paddle_dataset, paddle_dataloader = build_paddle_data_pipeline()
+    torch_dataset, torch_dataloader = build_torch_data_pipeline()
+
+    logger_paddle_data = ReprodLogger()
+    logger_torch_data = ReprodLogger()
+
+    # logger_paddle_data.add("length", np.array(len(paddle_dataset)))
+    # logger_torch_data.add("length", np.array(len(torch_dataset)))
+
+    # random choose 5 images and check
+    for idx in range(5):
+        rnd_idx = np.random.randint(0, len(paddle_dataset))
+        # rnd_idx = 0
+        print(rnd_idx)
+        logger_paddle_data.add(f"dataset_{idx}",
+                               paddle_dataset[rnd_idx][0][0].numpy())
+        logger_torch_data.add(f"dataset_{idx}",
+                              torch_dataset[rnd_idx][0][0].detach().cpu().numpy())
+
+    for idx, (paddle_batch, torch_batch
+              ) in enumerate(zip(paddle_dataloader, torch_dataloader)):
+        if idx >= 5:
+            break
+        logger_paddle_data.add(f"dataloader_{idx}", paddle_batch[0][0].numpy())
+        logger_torch_data.add(f"dataloader_{idx}",
+                              torch_batch[0][0].detach().cpu().numpy())
+
+    diff_helper.compare_info(logger_paddle_data.data, logger_torch_data.data)
+    diff_helper.report()
+
+
 if __name__ == "__main__":
     paddle.set_device("gpu")
+    # setup_seed(10)
     parser = argparse.ArgumentParser('iBOT', parents=[get_args_parser()])
     args = parser.parse_args()
-    # load model
-    # the model is save into ~/.cache/torch_model/hub/checkpoints/alexnet-owt-4df8aa71.pth
-    # def logger
-    reprod_logger = ReprodLogger()
-    setup_seed(10)
-
-    # weight = []
-    # for torch_key in torch_weight.keys():
-    #     weight.append([torch_key, torch_weight[torch_key].detach().numpy()])
-    #     print(torch_key)
-    # print(weight[0])
-
-    # student = IBOT_ViT_small_patch16_224(pretrained=False,norm_last_layer=False,masked_im_modeling=True)
-    # teacher = IBOT_ViT_small_patch16_224(pretrained=False,norm_last_layer=True,masked_im_modeling=False)
-
-    student = vit_small(patch_size=args.patch_size,drop_path_rate=args.drop_path,return_all_tokens=True, masked_im_modeling=args.use_masked_im_modeling)
-    teacher = vit_small(patch_size=args.patch_size,  return_all_tokens=True)
-    embed_dim = student.embed_dim
-    student = MultiCropWrapper(student, IBOTHead(
-        embed_dim,
-        out_dim=8192,
-        patch_out_dim=8192,
-        norm=None,
-        act="gelu",
-        norm_last_layer=False,
-        shared_head=True,
-    ))
-
-    teacher = MultiCropWrapper(
-        teacher,
-        IBOTHead(
-            embed_dim,
-            out_dim=8192,
-            patch_out_dim=8192,
-            norm=None,
-            act="gelu",
-            shared_head=True,
-        ),
-    )
-
-    paddle_weight = student.state_dict()
-    student.eval()
-    teacher.eval()
-    # 检查是否paddle中的key在torch的dict中能找到
-    # for paddle_key in paddle_weight:
-    #     if paddle_key in torch_weight.keys():
-    #         print("Oh Yeah")
-    #     else:
-    #         print("No!!!")
-
-    # param_dict = paddle.load("/data1/linkaihao/reproduce/ibot/duiqi/student2.pdparams")
-    # paddle_model.set_dict(param_dict)
-    checkpoint = torch.load(os.path.join(args.load_from,"checkpoint.pth"), map_location="cpu")
-    checkpoint["student"] = {k.replace("module.", ""): v for k, v in checkpoint["student"].items()}
-    student_weight = checkpoint["student"]
-    student_weight.pop('head.last_layer.weight_g')
-    student_weight.pop('head.last_layer2.weight_g')
-
-
-    student_weight_dict = OrderedDict()
-    for paddle_key in paddle_weight.keys():
-        # 首先要确保torch的权重里面有这个key，这样就可以避免DIY模型中一些小模块影响权重转换
-        if paddle_key in student_weight.keys():
-            # pytorch权重和paddle模型的权重为2维时需要转置，其余情况不需要
-            if len(student_weight[paddle_key].detach().numpy().shape) == 2 and "masked_embed" not in paddle_key:
-                # print(paddle_key)
-                student_weight_dict[paddle_key] = student_weight[paddle_key].detach().numpy().T
-            else:
-                student_weight_dict[paddle_key] = student_weight[paddle_key].detach().numpy()
-        else:
-            pass
-    paddle.save(student_weight_dict, os.path.join(args.output_dir, "student.pdparams"))
-    student.set_dict(student_weight_dict)
-    teacher_weight = checkpoint["teacher"]
-    teacher_weight.pop('head.last_layer.weight_g')
-    teacher_weight.pop('head.last_layer2.weight_g')
-
-    teacher_weight_dict = OrderedDict()
-    for paddle_key in paddle_weight.keys():
-        # 首先要确保torch的权重里面有这个key，这样就可以避免DIY模型中一些小模块影响权重转换
-        if paddle_key in teacher_weight.keys():
-            # pytorch权重和paddle模型的权重为2维时需要转置，其余情况不需要
-            if len(teacher_weight[paddle_key].detach().numpy().shape) == 2 and "masked_embed" not in paddle_key:
-                # print(paddle_key)
-                teacher_weight_dict[paddle_key] = teacher_weight[paddle_key].detach().numpy().T
-            else:
-                teacher_weight_dict[paddle_key] = teacher_weight[paddle_key].detach().numpy()
-        else:
-            pass
-    paddle.save(teacher_weight_dict, os.path.join(args.output_dir, "teacher.pdparams"))
-    # teacher.set_dict(teacher_weight_dict)
-    ibot_loss = IBOTLoss(
-        out_dim=8192,
-        patch_out_dim=8192,
-        ngcrops=2,
-        nlcrops=10,
-        teacher_temp=0.07
-    )
-
-    # paddle.save(paddle_model.state_dict(),"/data1/linkaihao/reproduce/ibot/duiqi/student2.pdparams")
-    torch_fake_data_list = []
-    torch_fake_label_list = []
-    torch_fake_mask_list = []
-
-    paddle_fake_data_list = []
-    paddle_fake_label_list = []
-    paddle_fake_mask_list = []
-
-    # np.random
-    fake_data = np.random.rand(32, 3, 224, 224).astype(np.float32) - 0.5
-    fake_mask = np.random.rand(32, 14, 14).astype(np.float32)
-    fake_label = np.arange(1).astype(np.int64)
-    # np.save("fake_data.npy", fake_data)
-    # np.save("fake_mask.npy", fake_label)
-
-    # fake_data = paddle.randn([32, 3, 224, 224])
-    # fake_mask = paddle.randn([32, 14, 14]) > 0.5
-    # torch_fake_data = torch_model.rand(32, 3, 224, 224)
-    # torch_fake_mask = torch_model.randn(32, 14, 14) > 0.5
-
-    # torch_fake_data = torch_model.from_numpy(fake_data)
-    # torch_fake_mask = torch_model.from_numpy(fake_mask) > 0.5
-    paddle_fake_data = paddle.to_tensor(fake_data)
-    paddle_fake_mask = paddle.to_tensor(fake_mask) > 0.5
-
-
-
-    # fake_mask = np.random.rand(1, 3, 14, 14) > 0.5
-    fake_label = np.arange(1).astype(np.int64)
-    for _ in range(0, 12):
-        # torch_fake_data_list.append(torch_fake_data)
-        # fake_label_list.append(fake_label)
-        # torch_fake_mask_list.append(torch_fake_mask)
-        paddle_fake_data_list.append(paddle_fake_data)
-        # fake_label_list.append(fake_label)
-        paddle_fake_mask_list.append(paddle_fake_mask.cuda())
-
-    with paddle.no_grad():
-        reprod_logger = ReprodLogger()
-        out_save = student(paddle_fake_data_list,mask=paddle_fake_mask_list)
-        reprod_logger.add("logits", out_save[0].cpu().detach().numpy())
-        reprod_logger.save(os.path.join(args.output_dir,"forward_paddle.npy"))
-        reprod_logger = ReprodLogger()
-        out_save = teacher(paddle_fake_data_list)
-        reprod_logger.add("logits", out_save[0].cpu().detach().numpy())
-        reprod_logger.save(os.path.join(args.output_dir,"teacher_forward_paddle.npy"))
-        teacher_output = teacher(paddle_fake_data_list[:2])
-        student_output = student(paddle_fake_data_list[:2], mask=paddle_fake_mask_list[:2])
-        student.backbone.masked_im_modeling = False
-        student_local_cls = student(paddle_fake_data_list[2:])[0] if len(paddle_fake_data_list) > 2 else None
-        all_loss = ibot_loss(student_output, teacher_output, student_local_cls, paddle_fake_mask_list[2:], 2)
-        loss = all_loss.pop('loss')
-        print(loss.cpu().detach().numpy())
-        reprod_logger = ReprodLogger()
-        reprod_logger.add("logits", loss.cpu().detach().numpy())
-        reprod_logger.save(os.path.join(args.output_dir,"loss_paddle.npy"))
-
-
-    diff_helper = ReprodDiffHelper()
-    torch_info = diff_helper.load_info(os.path.join(args.output_dir,"forward_torch.npy"))
-    paddle_info = diff_helper.load_info(os.path.join(args.output_dir,"forward_paddle.npy"))
-    diff_helper.compare_info(torch_info, paddle_info)
-    diff_helper.report(path=os.path.join(args.output_dir,"forward_diff.log"))
-
-    diff_helper = ReprodDiffHelper()
-    torch_info = diff_helper.load_info(os.path.join(args.output_dir,"teacher_forward_torch.npy"))
-    paddle_info = diff_helper.load_info(os.path.join(args.output_dir,"teacher_forward_paddle.npy"))
-    diff_helper.compare_info(torch_info, paddle_info)
-    diff_helper.report(path=os.path.join(args.output_dir,"forward_diff.log"))
-
-    torch_info = diff_helper.load_info(os.path.join(args.output_dir,"loss_torch.npy"))
-    paddle_info = diff_helper.load_info(os.path.join(args.output_dir,"loss_paddle.npy"))
-    diff_helper.compare_info(torch_info, paddle_info)
-    diff_helper.report(path=os.path.join(args.output_dir,"forward_diff.log"))
-
+    test_data_pipeline()

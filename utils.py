@@ -226,8 +226,8 @@ class SmoothedValue(object):
         """
         Warning: does not synchronize the deque!
         """
-        if not is_dist_avail_and_initialized():
-            return
+        # if not is_dist_avail_and_initialized():
+        #     return
         t = paddle.to_tensor([self.count, self.total], dtype=paddle.float64)
         dist.barrier()
         dist.all_reduce(t)
@@ -439,7 +439,7 @@ def setup_for_distributed(is_master):
 
 
 def init_distributed_mode(args):
-    # launched with torch.distributed.launch
+    # launched with torch_model.distributed.launch
     if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
         args.rank = int(os.environ["RANK"])
         args.world_size = int(os.environ['WORLD_SIZE'])
@@ -466,7 +466,7 @@ def init_distributed_mode(args):
         rank=args.rank,
     )
 
-    # torch.cuda.set_device(args.gpu)
+    # torch_model.cuda.set_device(args.gpu)
     print('| distributed init (rank {}): {}'.format(
         args.rank, args.dist_url), flush=True)
     dist.barrier()
@@ -622,7 +622,7 @@ def has_batchnorms(model: nn.Layer):
 def concat_all_gather(tensor):
     """
     Performs all_gather operation on the provided tensors.
-    *** Warning ***: torch.distributed.all_gather has no gradient.
+    *** Warning ***: torch_model.distributed.all_gather has no gradient.
     """
     tensors_gather = [paddle.ones_like(tensor)
         for _ in range(dist.get_world_size())]
