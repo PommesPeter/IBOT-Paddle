@@ -77,7 +77,7 @@ def load_pretrained_weights(model, pretrained_weights, checkpoint_key, model_nam
         state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
         # remove `backbone.` prefix induced by multicrop wrapper
         state_dict = {k.replace("backbone.", ""): v for k, v in state_dict.items()}
-        msg = model.load_state_dict(state_dict, strict=False)
+        msg = model.load_dict(state_dict, strict=False)
         print('Pretrained weights found at {} and loaded with msg: {}'.format(pretrained_weights, msg))
         return
     elif pretrained_weights == 'download':
@@ -148,11 +148,11 @@ def restart_from_checkpoint(ckp_path, run_variables=None, **kwargs):
     for key, value in kwargs.items():
         if key in checkpoint and value is not None:
             try:
-                msg = value.load_state_dict(checkpoint[key], strict=False)
+                msg = value.load_dict(checkpoint[key], strict=False)
                 print("=> loaded '{}' from checkpoint '{}' with msg {}".format(key, ckp_path, msg))
             except TypeError:
                 try:
-                    msg = value.load_state_dict(checkpoint[key])
+                    msg = value.load_dict(checkpoint[key])
                     print("=> loaded '{}' from checkpoint: '{}'".format(key, ckp_path))
                 except ValueError:
                     print("=> failed to load '{}' from checkpoint: '{}'".format(key, ckp_path))

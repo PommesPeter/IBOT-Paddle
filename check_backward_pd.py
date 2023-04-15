@@ -22,6 +22,7 @@ batch_data = np.load("/home/xiejunlin/workspace/ibot/batch_data.npy", allow_pick
 images = [paddle.to_tensor(it) for it in batch_data[0]]
 label = paddle.to_tensor(batch_data[1])
 masks = [paddle.to_tensor(it) for it in batch_data[2]]
+batch_data = tuple((images, label, masks))
 LEN_DATALOADER = 1
 
 
@@ -120,6 +121,7 @@ utils.restart_from_checkpoint(
     run_variables=to_restore,
     student=student,
     teacher=teacher,
+    optimizer=optimizer, # todo: need to load optimizer parameters
     ibot_loss=ibot_loss
 )
 start_epoch = 0
@@ -154,7 +156,7 @@ def log_lr():
 
 
 def backbone_one_epoch(epoch, data, reprod_log):
-    images, labels, masks = zip(data)
+    images, labels, masks = data
     names_q, params_q, names_k, params_k = [], [], [], []
     for name_q, param_q in student.named_parameters():
         names_q.append(name_q)
@@ -178,17 +180,17 @@ def backbone_one_epoch(epoch, data, reprod_log):
     teacher_output = teacher(images[:2])  # only the 2 global views pass through the teacher
     student_output = student(images[:2], mask=masks[:2])      # all views pass through the student
 
-    student.sublayers()[0].backbone.masked_im_modeling = False
+    student.backbone.masked_im_modeling = False
     student_local_cls = student(images[2:])[0] if len(images) > 2 else None
-    student.sublayers()[0].backbone.masked_im_modeling = args.use_masked_im_modeling
+    student.backbone.masked_im_modeling = args.use_masked_im_modeling
     
-    for i in range(2):
-        arr = teacher_bkb(data[i]).detach().numpy()
-        reprod_log.add(f"bkb_fea_{i}", arr)
+    # for i in range(2):
+    #     arr = teacher_bkb(data[i]).detach().numpy()
+    #     reprod_log.add(f"bkb_fea_{i}", arr)
 
-    for i in range(2, 12):
-        arr = student_bkb(data[i]).detach().numpy()
-        reprod_log.add(f"bkb_stu_{i}", arr)
+    # for i in range(2, 12):
+    #     arr = student_bkb(data[i]).detach().numpy()
+    #     reprod_log.add(f"bkb_stu_{i}", arr)
 
     for i in range(len(teacher_output)):
         arr = teacher_output[i].detach().numpy()
@@ -198,7 +200,7 @@ def backbone_one_epoch(epoch, data, reprod_log):
         arr = student_output[i].detach().numpy()
         reprod_log.add(f"stu_out_{i}", arr)
 
-    all_loss = ibot_loss(student_output, teacher_output, epoch)
+    all_loss = ibot_loss(student_output, teacher_output, student_local_cls, masks, epoch)
     loss = all_loss.pop("loss")
     cls_loss = all_loss.pop("cls")
     patch_loss = all_loss.pop("patch")
@@ -241,7 +243,7 @@ def check_backbone_backward():
 
     reprod_log = ReprodLogger()
     for epoch in range(10):
-        loss = backbone_one_epoch(epoch, images, reprod_log)
+        loss = backbone_one_epoch(epoch, batch_data, reprod_log)
         print(f"epoch: {epoch}, loss: {loss}")
 
     reprod_log.save("./reprod_out/pd_backward.npy")
