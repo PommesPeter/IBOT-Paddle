@@ -41,7 +41,6 @@ class Solarization(object):
         else:
             return img
 
-
 class RandomApply(BaseTransform):
     def __init__(self, transforms: list, p=0.8):
         super(RandomApply, self).__init__()
@@ -107,6 +106,7 @@ class IBOTAugmentation(object):
                 normalize,
             ]
         )
+
         # second global crop
         self.global_transfo2 = transforms.Compose(
             [

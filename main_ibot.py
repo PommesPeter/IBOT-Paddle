@@ -400,11 +400,11 @@ def train_one_epoch(
     for it, (images, labels, masks) in enumerate(metric_logger.log_every(data_loader, 10, header)):
         # update weight decay and learning rate
         # compute global training iteration
-        cur_iter_num = len(data_loader) * epoch + it # global training iteration
-        optimizer.set_lr(lr_schedule[cur_iter_num])
+        it = len(data_loader) * epoch + it # global training iteration
+        optimizer.set_lr(lr_schedule[it])
         for i, param_group in enumerate(optimizer._param_groups):
             if i == 0: # only the first group is regularized
-                param_group["weight_decay"] = wd_schedule[cur_iter_num]
+                param_group["weight_decay"] = wd_schedule[it]
 
         with paddle.amp.auto_cast(fp16_scaler is not None):
             # forward and compute ibot loss
@@ -419,18 +419,21 @@ def train_one_epoch(
             loss = all_loss.pop('loss')
 
         if not math.isfinite(loss.item()):
-            print("Loss is {}, stopping training".format(loss.item()), force=True)
+            print("Loss is {}, stopping training".format(loss.item()))
             sys.exit(1)
         # log statistics
         probs1 = teacher_output[0].chunk(args.global_crops_number)
         probs2 = student_output[0].chunk(args.global_crops_number)
-        
-        pred1 = utils.concat_all_gather(paddle.max(probs1[0], axis=1)[1])
-        pred2 = utils.concat_all_gather(paddle.max(probs2[1], axis=1)[1])
 
-        acc = (pred1 == pred2).sum() / pred1.shape[0]
+        pred1 = utils.concat_all_gather(paddle.argmax(probs1[0],axis=1))
+        pred2 = utils.concat_all_gather(paddle.argmax(probs2[1],axis=1))
+
+        # print(pred1 == pred2)
+        # print(paddle.sum(pred1 == pred2),pred1.shape[0])
+        acc = ((pred1 == pred2).sum())/ pred1.shape[0]
+        # print(acc)
         pred_labels.append(pred1)
-        real_labels.append(utils.concat_all_gather(labels))
+        real_labels.append(utils.concat_all_gather(labels.cuda()))
 
         # student update
         optimizer.clear_grad()
@@ -448,10 +451,9 @@ def train_one_epoch(
 
         # EMA update for the teacher
         with paddle.no_grad():
-            m = momentum_schedule[cur_iter_num]
-            for param_stu, params_tea in zip(student.parameters(), teacher_without_ddp.parameters()):
-                new_val = m * params_tea.numpy() + (1 - m) * param_stu.detach().numpy()
-                params_tea.set_value(new_val)
+            m = momentum_schedule[it]  # momentum parameter
+            for param_q, param_k in zip(params_q, params_k):
+                param_k.data.mul_(m).add_((1 - m) * param_q.detach().data)
 
         paddle.device.cuda.synchronize()
         metric_logger.update(loss=loss.item())
@@ -461,8 +463,8 @@ def train_one_epoch(
         metric_logger.update(wd=optimizer._param_groups[0]["weight_decay"])
         metric_logger.update(acc=acc)
 
-    pred_labels = paddle.cat(pred_labels).cpu().detach().numpy()
-    real_labels = paddle.cat(real_labels).cpu().detach().numpy()
+    pred_labels = paddle.concat(pred_labels).cpu().detach().numpy()
+    real_labels = paddle.concat(real_labels).cpu().detach().numpy()
     nmi, ari, fscore, adjacc = eval_pred(real_labels, pred_labels, calc_acc=False)
     
     # gather the stats from all processes
