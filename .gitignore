@@ -135,3 +135,6 @@ log/
 data
 output/
 outputs/
+
+check/ckpt
+reprod_out

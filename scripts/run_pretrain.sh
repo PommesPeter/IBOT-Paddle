@@ -2,7 +2,7 @@ python -m paddle.distributed.launch --gpus="6,7" main_ibot.py \
     --patch_size 16 \
     --epochs 800 \
     --arch vit_small \
-    --data_path ~/data/datadsets/imagenet/mini/train \
+    --data_path ~/data/datasets/imagenet/mini/train \
     --batch_size_per_gpu 64 \
     --output_dir ./output \
     --teacher_temp 0.07 \

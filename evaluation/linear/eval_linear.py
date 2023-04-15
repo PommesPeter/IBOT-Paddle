@@ -424,7 +424,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--lr",
-        default=0.003,
+        default=0.001,
         type=float,
         help="""Learning rate at the beginning of
         training (highest LR used during training). The learning rate is linearly scaled
@@ -436,7 +436,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--data_path",
-        default="/path/to/imagenet/",
+        default="~/data/datasets/imagenet/mini",
         type=str,
         help="Please specify path to the ImageNet data.",
     )
@@ -460,7 +460,7 @@ if __name__ == "__main__":
         help="Number of labels for linear classifier",
     )
     parser.add_argument(
-        "--resume_path",
+        "--load_from",
         default=None,
         help="Path to load checkpoints to resume training",
     )
