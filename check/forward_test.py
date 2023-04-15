@@ -11,6 +11,7 @@ from reprod_log import ReprodLogger
 from collections import OrderedDict
 from loss import IBOTLoss
 import argparse
+
 def setup_seed(seed=10):
     import torch
     import os

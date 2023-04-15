@@ -20,6 +20,7 @@ import os
 import sys
 import time
 from pathlib import Path
+import numpy as np
 
 import paddle
 import paddle.distributed as dist
@@ -389,6 +390,12 @@ def train_one_epoch(
     params_q = [param_q for name_q, param_q in zip(names_q, params_q) if name_q in names_common]
     params_k = [param_k for name_k, param_k in zip(names_k, params_k) if name_k in names_common]
     
+    # debug:
+    data_batch = np.load("/home/xiejunlin/workspace/ibot/batch_data.npy")
+    image = [paddle.to_tensor(batch) for batch in data_batch[0]]
+    label = paddle.to_tensor(data_batch[1])
+    mask = [paddle.to_tensor(batch) for batch in data_batch[2]]
+    data_loader = [image, label, mask]
     pred_labels, real_labels = [], []
     for it, (images, labels, masks) in enumerate(metric_logger.log_every(data_loader, 10, header)):
         # update weight decay and learning rate
