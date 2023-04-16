@@ -196,7 +196,6 @@ if __name__ == "__main__":
         ),
     )
 
-    paddle_weight = student.state_dict()
     student.eval()
     teacher.eval()
     # 检查是否paddle中的key在torch的dict中能找到
@@ -216,6 +215,7 @@ if __name__ == "__main__":
 
 
     student_weight_dict = OrderedDict()
+    paddle_weight = student.state_dict()
     for paddle_key in paddle_weight.keys():
         # 首先要确保torch的权重里面有这个key，这样就可以避免DIY模型中一些小模块影响权重转换
         if paddle_key in student_weight.keys():
@@ -229,11 +229,13 @@ if __name__ == "__main__":
             pass
     paddle.save(student_weight_dict, os.path.join(args.output_dir, "student.pdparams"))
     student.set_dict(student_weight_dict)
+
     teacher_weight = checkpoint["teacher"]
     teacher_weight.pop('head.last_layer.weight_g')
     teacher_weight.pop('head.last_layer2.weight_g')
 
     teacher_weight_dict = OrderedDict()
+    paddle_weight = teacher.state_dict()
     for paddle_key in paddle_weight.keys():
         # 首先要确保torch的权重里面有这个key，这样就可以避免DIY模型中一些小模块影响权重转换
         if paddle_key in teacher_weight.keys():
@@ -246,7 +248,8 @@ if __name__ == "__main__":
         else:
             pass
     paddle.save(teacher_weight_dict, os.path.join(args.output_dir, "teacher.pdparams"))
-    # teacher.set_dict(teacher_weight_dict)
+    teacher.set_dict(teacher_weight_dict)
+
     ibot_loss = IBOTLoss(
         out_dim=8192,
         patch_out_dim=8192,
@@ -264,67 +267,96 @@ if __name__ == "__main__":
     paddle_fake_label_list = []
     paddle_fake_mask_list = []
 
-    # np.random
-    fake_data = np.random.rand(32, 3, 224, 224).astype(np.float32) - 0.5
-    fake_mask = np.random.rand(32, 14, 14).astype(np.float32)
-    fake_label = np.arange(1).astype(np.int64)
-    # np.save("fake_data.npy", fake_data)
-    # np.save("fake_mask.npy", fake_label)
 
-    # fake_data = paddle.randn([32, 3, 224, 224])
-    # fake_mask = paddle.randn([32, 14, 14]) > 0.5
-    # torch_fake_data = torch_model.rand(32, 3, 224, 224)
-    # torch_fake_mask = torch_model.randn(32, 14, 14) > 0.5
-
-    # torch_fake_data = torch_model.from_numpy(fake_data)
-    # torch_fake_mask = torch_model.from_numpy(fake_mask) > 0.5
-    paddle_fake_data = paddle.to_tensor(fake_data)
-    paddle_fake_mask = paddle.to_tensor(fake_mask) > 0.5
 
 
 
     # fake_mask = np.random.rand(1, 3, 14, 14) > 0.5
     fake_label = np.arange(1).astype(np.int64)
     for _ in range(0, 12):
+        # np.random
+        fake_data = np.random.rand(64, 3, 224, 224).astype(np.float32) - 0.5
+        fake_mask = np.random.rand(64, 14, 14).astype(np.float32)
+        fake_label = np.arange(1).astype(np.int64)
+        # np.save("fake_data.npy", fake_data)
+        # np.save("fake_mask.npy", fake_label)
+
+        # fake_data = paddle.randn([32, 3, 224, 224])
+        # fake_mask = paddle.randn([32, 14, 14]) > 0.5
+        # torch_fake_data = torch_model.rand(32, 3, 224, 224)
+        # torch_fake_mask = torch_model.randn(32, 14, 14) > 0.5
+
+        # torch_fake_data = torch_model.from_numpy(fake_data)
+        # torch_fake_mask = torch_model.from_numpy(fake_mask) > 0.5
+        paddle_fake_data = paddle.to_tensor(fake_data)
+        paddle_fake_mask = paddle.to_tensor(fake_mask) > 0.5
+
         # torch_fake_data_list.append(torch_fake_data)
         # fake_label_list.append(fake_label)
         # torch_fake_mask_list.append(torch_fake_mask)
-        paddle_fake_data_list.append(paddle_fake_data)
+        paddle_fake_data_list.append(paddle_fake_data.cuda())
         # fake_label_list.append(fake_label)
         paddle_fake_mask_list.append(paddle_fake_mask.cuda())
 
+    reprod_logger = ReprodLogger()
+
+    # reprod_logger.add("logits", paddle_fake_data.cpu().detach().numpy())
+    # reprod_logger.save(os.path.join(args.output_dir, "data_paddle.npy"))
+
     with paddle.no_grad():
-        reprod_logger = ReprodLogger()
-        out_save = student(paddle_fake_data_list,mask=paddle_fake_mask_list)
+
+        out_save,bk = student(paddle_fake_data_list,mask=paddle_fake_mask_list)
         reprod_logger.add("logits", out_save[0].cpu().detach().numpy())
         reprod_logger.save(os.path.join(args.output_dir,"forward_paddle.npy"))
+        reprod_logger.add("logits", bk.cpu().detach().numpy())
+        reprod_logger.save(os.path.join(args.output_dir, "student_mid_forward_paddle.npy"))
+
         reprod_logger = ReprodLogger()
-        out_save = teacher(paddle_fake_data_list)
+        out_save,bk = teacher(paddle_fake_data_list)
         reprod_logger.add("logits", out_save[0].cpu().detach().numpy())
         reprod_logger.save(os.path.join(args.output_dir,"teacher_forward_paddle.npy"))
-        teacher_output = teacher(paddle_fake_data_list[:2])
-        student_output = student(paddle_fake_data_list[:2], mask=paddle_fake_mask_list[:2])
+
+        reprod_logger.add("logits", bk.cpu().detach().numpy())
+        reprod_logger.save(os.path.join(args.output_dir, "teacher_mid_forward_paddle.npy"))
+
+
+        teacher_output,_ = teacher(paddle_fake_data_list[:2])
+        student_output,_ = student(paddle_fake_data_list[:2], mask=paddle_fake_mask_list[:2])
         student.backbone.masked_im_modeling = False
-        student_local_cls = student(paddle_fake_data_list[2:])[0] if len(paddle_fake_data_list) > 2 else None
+        student_local_cls = student(paddle_fake_data_list[2:])[0][0] if len(paddle_fake_data_list) > 2 else None
         all_loss = ibot_loss(student_output, teacher_output, student_local_cls, paddle_fake_mask_list[2:], 2)
         loss = all_loss.pop('loss')
         print(loss.cpu().detach().numpy())
-        reprod_logger = ReprodLogger()
+
         reprod_logger.add("logits", loss.cpu().detach().numpy())
         reprod_logger.save(os.path.join(args.output_dir,"loss_paddle.npy"))
 
 
     diff_helper = ReprodDiffHelper()
+    # torch_info = diff_helper.load_info(os.path.join(args.output_dir, "data_torch.npy"))
+    # paddle_info = diff_helper.load_info(os.path.join(args.output_dir, "data_paddle.npy"))
+    # diff_helper.compare_info(torch_info, paddle_info)
+    # diff_helper.report(path=os.path.join(args.output_dir, "data_diff.log"))
+
     torch_info = diff_helper.load_info(os.path.join(args.output_dir,"forward_torch.npy"))
     paddle_info = diff_helper.load_info(os.path.join(args.output_dir,"forward_paddle.npy"))
     diff_helper.compare_info(torch_info, paddle_info)
     diff_helper.report(path=os.path.join(args.output_dir,"forward_diff.log"))
 
-    diff_helper = ReprodDiffHelper()
+    torch_info = diff_helper.load_info(os.path.join(args.output_dir, "student_mid_forward_torch.npy"))
+    paddle_info = diff_helper.load_info(os.path.join(args.output_dir, "student_mid_forward_paddle.npy"))
+    diff_helper.compare_info(torch_info, paddle_info)
+    diff_helper.report(path=os.path.join(args.output_dir, "forward_diff.log"))
+
     torch_info = diff_helper.load_info(os.path.join(args.output_dir,"teacher_forward_torch.npy"))
     paddle_info = diff_helper.load_info(os.path.join(args.output_dir,"teacher_forward_paddle.npy"))
     diff_helper.compare_info(torch_info, paddle_info)
     diff_helper.report(path=os.path.join(args.output_dir,"forward_diff.log"))
+
+    torch_info = diff_helper.load_info(os.path.join(args.output_dir, "teacher_mid_forward_torch.npy"))
+    paddle_info = diff_helper.load_info(os.path.join(args.output_dir, "teacher_mid_forward_paddle.npy"))
+    diff_helper.compare_info(torch_info, paddle_info)
+    diff_helper.report(path=os.path.join(args.output_dir, "forward_diff.log"))
 
     torch_info = diff_helper.load_info(os.path.join(args.output_dir,"loss_torch.npy"))
     paddle_info = diff_helper.load_info(os.path.join(args.output_dir,"loss_paddle.npy"))

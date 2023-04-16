@@ -206,8 +206,8 @@ class VisionTransformer(nn.Module):
     def prepare_tokens(self, x, mask=None):
         B, nc, w, h = x.shape
         # patch linear embedding
-        x = self.patch_embed(x)
-
+        x= self.patch_embed(x)
+        tx = x
         # mask image modeling
         if mask is not None:
             x = self.mask_model(x, mask)
@@ -220,16 +220,16 @@ class VisionTransformer(nn.Module):
         # add positional encoding to each token
         x = x + self.interpolate_pos_encoding(x, w, h)
 
-        return self.pos_drop(x)
+        return self.pos_drop(x),tx
 
     def forward(self, x, return_all_tokens=None, mask=None):
         # mim
         if self.masked_im_modeling:
             assert mask is not None
-            x = self.prepare_tokens(x, mask=mask)
+            x,tx = self.prepare_tokens(x, mask=mask)
         else:
-            x = self.prepare_tokens(x)
-
+            x,tx = self.prepare_tokens(x)
+        # tx = x
         for blk in self.blocks:
             x = blk(x)
 
@@ -240,7 +240,7 @@ class VisionTransformer(nn.Module):
         return_all_tokens = self.return_all_tokens if \
             return_all_tokens is None else return_all_tokens
         if return_all_tokens:
-            return x
+            return x,tx
         return x[:, 0]
 
     def get_last_selfattention(self, x):

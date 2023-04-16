@@ -216,16 +216,14 @@ def for_pass(args):
     checkpoint = torch.load(os.path.join(args.load_from,"checkpoint.pth"), map_location="cpu")
     checkpoint["student"] = {k.replace("module.", ""): v for k, v in checkpoint["student"].items()}
     d = checkpoint["student"]
-    print(d.keys())
     d.pop('head.last_layer.weight_g')
-    print(d.keys())
     d.pop('head.last_layer2.weight_g')
+    print(d.keys())
 
     d = checkpoint["teacher"]
-    print(d.keys())
     d.pop('head.last_layer.weight_g')
-    print(d.keys())
     d.pop('head.last_layer2.weight_g')
+    print(d.keys())
     # key is what to look for in the checkpoint file
     # value is the object to load
     # example: {'state_dict': model}
@@ -256,18 +254,20 @@ def for_pass(args):
     paddle_fake_label_list = []
     paddle_fake_mask_list = []
 
-    # np.random
-    fake_data = np.random.rand(32, 3, 224, 224).astype(np.float32) - 0.5
-    fake_mask = np.random.rand(32, 14, 14).astype(np.float32)
-    fake_label = np.arange(1).astype(np.int64)
 
-    torch_fake_data = torch.from_numpy(fake_data)
-    torch_fake_mask = torch.from_numpy(fake_mask) > 0.5
-    # paddle_fake_data = paddle.to_tensor(fake_data)
-    # paddle_fake_mask = paddle.to_tensor(fake_mask) > 0.5
+
 
     fake_label = np.arange(1).astype(np.int64)
     for _ in range(0, 12):
+        fake_data = np.random.rand(64, 3, 224, 224).astype(np.float32) - 0.5
+        fake_mask = np.random.rand(64, 14, 14).astype(np.float32)
+        fake_label = np.arange(1).astype(np.int64)
+
+        torch_fake_data = torch.from_numpy(fake_data)
+        torch_fake_mask = torch.from_numpy(fake_mask) > 0.5
+        # paddle_fake_data = paddle.to_tensor(fake_data)
+        # paddle_fake_mask = paddle.to_tensor(fake_mask) > 0.5
+
         torch_fake_data_list.append(torch_fake_data.cuda())
         # fake_label_list.append(fake_label)
         torch_fake_mask_list.append(torch_fake_mask.cuda())
@@ -275,21 +275,30 @@ def for_pass(args):
         # fake_label_list.append(fake_label)
         # paddle_fake_mask_list.append(paddle_fake_mask)
 
-
+    reprod_logger = ReprodLogger()
+    reprod_logger.add("logits", torch_fake_data.cpu().detach().numpy())
+    reprod_logger.save(os.path.join(args.output_dir, "data_torch.npy"))
 
     with torch.no_grad():
-        reprod_logger = ReprodLogger()
-        out_save = student(torch_fake_data_list, torch_fake_mask_list)
+        out_save,bk_f = student(torch_fake_data_list, torch_fake_mask_list)
         reprod_logger.add("logits", out_save[0].cpu().detach().numpy())
         reprod_logger.save(os.path.join(args.output_dir,"forward_torch.npy"))
-        out_save = teacher(torch_fake_data_list)
+        reprod_logger = ReprodLogger()
+        reprod_logger.add("logits", bk_f.cpu().detach().numpy())
+        reprod_logger.save(os.path.join(args.output_dir, "student_mid_forward_torch.npy"))
+
+        out_save,bk_f = teacher(torch_fake_data_list)
         reprod_logger = ReprodLogger()
         reprod_logger.add("logits", out_save[0].cpu().detach().numpy())
         reprod_logger.save(os.path.join(args.output_dir,"teacher_forward_torch.npy"))
-        teacher_output = teacher(torch_fake_data_list[:2])
-        student_output = student(torch_fake_data_list[:2],mask=torch_fake_mask_list[:2])
+        reprod_logger = ReprodLogger()
+        reprod_logger.add("logits", bk_f.cpu().detach().numpy())
+        reprod_logger.save(os.path.join(args.output_dir, "teacher_mid_forward_torch.npy"))
+
+        teacher_output,_ = teacher(torch_fake_data_list[:2])
+        student_output,_ = student(torch_fake_data_list[:2],mask=torch_fake_mask_list[:2])
         student.backbone.masked_im_modeling = False
-        student_local_cls = student(torch_fake_data_list[2:])[0] if len(torch_fake_data_list)>2 else None
+        student_local_cls = student(torch_fake_data_list[2:])[0][0] if len(torch_fake_data_list)>2 else None
 
         all_loss = ibot_loss(student_output, teacher_output, student_local_cls, torch_fake_mask_list[2:], 2)
         loss = all_loss.pop('loss')

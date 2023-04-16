@@ -1,4 +1,4 @@
-python -m paddle.distributed.launch --gpus="5,7" main_ibot.py \
+python -m paddle.distributed.launch --gpus="0,7" main_ibot.py \
     --patch_size 16 \
     --epochs 800 \
     --arch vit_small \
@@ -13,4 +13,7 @@ python -m paddle.distributed.launch --gpus="5,7" main_ibot.py \
     --local_crops_number 10 \
     --local_crops_scale 0.05 0.25 \
     --pred_ratio 0 0.3 \
-    --pred_ratio_var 0 0.2
+    --lr 0.001 \
+    --out_dim 8192 \
+    #    --pred_ratio_var 0 0.2 \
+

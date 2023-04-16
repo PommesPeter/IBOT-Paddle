@@ -44,8 +44,8 @@ class IBOTLoss(nn.Layer):
         """
         Cross-entropy between softmax outputs of the teacher and student networks.
         """
-        student_cls, student_patch = student_output
-        teacher_cls, teacher_patch = teacher_output
+        student_cls, student_patch,_ = student_output
+        teacher_cls, teacher_patch,_ = teacher_output
 
         if student_local_cls is not None:
             student_cls = paddle.concat([student_cls, student_local_cls])
