@@ -13,7 +13,7 @@ ones_ = Constant(value=1.0)
 class LinearClassifier(nn.Layer):
     """Linear layer to train on top of frozen features"""
 
-    def __init__(self, dim, num_labels=1000):
+    def __init__(self, dim, num_labels=1000) -> object:
         super(LinearClassifier, self).__init__()
         self.num_labels = num_labels
         self.linear = nn.Linear(dim, num_labels)

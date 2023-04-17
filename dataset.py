@@ -161,7 +161,7 @@ class ImageFolderMask(ImageFolder):
         if self.transform is not None:
             sample = self.transform(sample)
         output = sample, label
-                
+        # return output
         masks = []
         for img in output[0]:
             try:
@@ -169,9 +169,9 @@ class ImageFolderMask(ImageFolder):
             except:
                 # skip non-image
                 continue
-            
+
             high = self.get_pred_ratio() * H * W
-            
+
             if self.pred_shape == 'block':
                 # following BEiT (https://arxiv.org/abs/2106.08254), see at
                 # https://github.com/microsoft/unilm/blob/b94ec76c36f02fb2b0bf0dcb0b8554a2185173cd/beit/masking_generator.py#L55
@@ -182,7 +182,7 @@ class ImageFolderMask(ImageFolder):
 
                     delta = 0
                     for attempt in range(10):
-                        low = (min(H, W) // 3) ** 2 
+                        low = (min(H, W) // 3) ** 2
                         target_area = random.uniform(low, max_mask_patches)
                         aspect_ratio = math.exp(random.uniform(*self.log_aspect_ratio))
                         h = int(round(math.sqrt(target_area * aspect_ratio)))
@@ -206,7 +206,7 @@ class ImageFolderMask(ImageFolder):
                         break
                     else:
                         mask_count += delta
-            
+
             elif self.pred_shape == 'rand':
                 mask = np.hstack([
                     np.zeros(H * W - int(high)),

@@ -24,12 +24,12 @@ import paddle.io as io
 import paddle.nn as nn
 import paddle.optimizer as optim
 import paddle.vision.transforms as T
-
+from paddle.vision.datasets import DatasetFolder
+import sys
+sys.path.append("./")
 import models
-import utils
-from dataset import ImageFolder
 from models import LinearClassifier
-
+import utils
 
 def eval_linear(args):
     dist.init_parallel_env()
@@ -53,7 +53,7 @@ def eval_linear(args):
         )
         val_transform = T.Compose(
             [
-                T.Resize(128, interpolation=3),
+                T.Resize(size=128, interpolation='bicubic'),
                 T.CenterCrop(112),
                 T.ToTensor(),
             ]
@@ -69,7 +69,7 @@ def eval_linear(args):
         )
         val_transform = T.Compose(
             [
-                T.Resize(256, interpolation=3),
+                T.Resize(size=256, interpolation='bicubic'),
                 T.CenterCrop(224),
                 T.ToTensor(),
                 T.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
@@ -78,14 +78,13 @@ def eval_linear(args):
 
     train_dir = os.path.join(args.data_path, "train")
     val_dir = os.path.join(args.data_path, "val")
-    dataset_train = ImageFolder(train_dir, transform=train_transform)
-    dataset_val = ImageFolder(val_dir, transform=val_transform)
+    dataset_train = DatasetFolder(train_dir, transform=train_transform)
+    dataset_val = DatasetFolder(val_dir, transform=val_transform)
 
-    sampler = io.DistributedBatchSampler(dataset_train)
+    sampler = io.DistributedBatchSampler(dataset_train,args.batch_size_per_gpu,shuffle=True)
     train_loader = io.DataLoader(
         dataset_train,
         batch_sampler=sampler,
-        batch_size=args.batch_size_per_gpu,
         num_workers=args.num_workers,
     )
     val_loader = io.DataLoader(
@@ -114,9 +113,9 @@ def eval_linear(args):
 
     print(f"Model {args.arch} {args.patch_size}x{args.patch_size} built.")
     # load weights to evaluate
-    # utils.load_pretrained_weights(
-    #     model, args.pretrained_weights, args.checkpoint_key, args.arch, args.patch_size
-    # )
+    utils.load_pretrained_weights(
+        model, args.pretrained_weights, args.checkpoint_key, args.arch, args.patch_size
+    )
 
     if "swin" in args.arch:
         num_features = []
@@ -129,13 +128,13 @@ def eval_linear(args):
             + int(args.avgpool_patchtokens > 0)
         )
     linear_clf = LinearClassifier(feat_dim, num_labels=args.num_labels)
-    linear_clf = paddle.DataParallel(linear_clf)
+    # linear_clf = paddle.DataParallel(linear_clf)
 
     # set optimizer
     base_lr = args.lr * (
-        args.batch_size * dist.get_world_size() / 256
+        args.batch_size_per_gpu * dist.get_world_size() / 256
     )  # linear scaling rule
-
+    # print(args.lr,base_lr)
     parameters = linear_clf.parameters()
     scheduler = optim.lr.CosineAnnealingDecay(
         learning_rate=base_lr, T_max=args.epochs, eta_min=0
@@ -149,9 +148,9 @@ def eval_linear(args):
 
     # Optionally resume from a checkpoint
     to_restore = {"epoch": 0, "best_acc": 0.0}
-    if args.resume_path != "":
+    if args.load_from != "":
         utils.restart_from_checkpoint(
-            os.path.join(args.output_dir, args.resume_path),
+            os.path.join(args.output_dir, args.load_from),
             run_variables=to_restore,
             state_dict=linear_clf,
             optimizer=optimizer,
@@ -164,6 +163,7 @@ def eval_linear(args):
     for epoch in range(start_epoch, args.epochs):
         train_loader.batch_sampler.set_epoch(epoch)
         model.eval()
+        linear_clf.train()
         train_stats = train(
             model,
             linear_clf,
@@ -199,7 +199,10 @@ def eval_linear(args):
 
             if dist.get_rank() == 0:
                 # always only save best checkpoint till now
-                with open(Path(args.output_dir) / "log.txt").open("a") as f:
+                if not os.path.exists(Path(args.output_dir) / "log.txt"):
+                    fp = open(Path(args.output_dir) / "log.txt","w")
+                    fp.close()
+                with open(Path(args.output_dir) / "log.txt","a") as f:
                     f.write(json.dumps(log_stats) + "\n")
 
                 save_dict = {
@@ -236,8 +239,8 @@ def train(model, linear_clf, optimizer, loader, epoch, n, avgpool):
     header = "Epoch: [{}]".format(epoch)
     for inp, target in metric_logger.log_every(loader, 20, header):
         # move to gpu
-        inp = inp.cuda(non_blocking=True)
-        target = target.cuda(non_blocking=True)
+        inp = inp.cuda()
+        target = target.cuda()
 
         # forward
         with paddle.no_grad():
@@ -247,22 +250,23 @@ def train(model, linear_clf, optimizer, loader, epoch, n, avgpool):
                 output = [x[:, 0] for x in intermediate_output]
             elif avgpool == 1:
                 # x[:, 1:].mean(1)
-                output = [paddle.mean(intermediate_output[-1][:, 1:], dim=1)]
+                output = [paddle.mean(intermediate_output[-1][:, 1:], axis=1)]
             elif avgpool == 2:
                 # norm(x[:, 0]) + x[:, 1:].mean(1)
                 output = [x[:, 0] for x in intermediate_output] + [
-                    paddle.mean(intermediate_output[-1][:, 1:], dim=1)
+                    paddle.mean(intermediate_output[-1][:, 1:], axis=1)
                 ]
             else:
                 assert False, "Unkown avgpool type {}".format(avgpool)
 
-            output = paddle.cat(output, dim=-1)
+            output = paddle.concat(output, axis=-1)
 
         output = linear_clf(output)
 
         # compute cross entropy loss
         loss = nn.CrossEntropyLoss()(output, target)
-
+        # print(output)
+        # print(target)
         # compute the gradients
         optimizer.clear_grad()
         loss.backward()
@@ -292,8 +296,8 @@ def validate_network(val_loader, model, linear_clf, n, avgpool):
     header = "Test:"
     for inp, target in metric_logger.log_every(val_loader, 20, header):
         # move to gpu
-        inp = inp.cuda(non_blocking=True)
-        target = target.cuda(non_blocking=True)
+        inp = inp.cuda()
+        target = target.cuda()
 
         # forward
         with paddle.no_grad():
@@ -303,16 +307,16 @@ def validate_network(val_loader, model, linear_clf, n, avgpool):
                 output = [x[:, 0] for x in intermediate_output]
             elif avgpool == 1:
                 # x[:, 1:].mean(1)
-                output = [paddle.mean(intermediate_output[-1][:, 1:], dim=1)]
+                output = [paddle.mean(intermediate_output[-1][:, 1:], axis=1)]
             elif avgpool == 2:
                 # norm(x[:, 0]) + x[:, 1:].mean(1)
                 output = [x[:, 0] for x in intermediate_output] + [
-                    paddle.mean(intermediate_output[-1][:, 1:], dim=1)
+                    paddle.mean(intermediate_output[-1][:, 1:], axis=1)
                 ]
             else:
                 assert False, "Unkown avgpool type {}".format(avgpool)
 
-            output = paddle.cat(output, dim=-1)
+            output = paddle.concat(output, axis=-1)
 
         output = linear_clf(output)
         loss = nn.CrossEntropyLoss()(output, target)
@@ -436,7 +440,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--data_path",
-        default="~/data/datasets/imagenet/mini",
+        default="/path/to/imagenet/",
         type=str,
         help="Please specify path to the ImageNet data.",
     )
@@ -461,7 +465,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--load_from",
-        default=None,
+        default="",
         help="Path to load checkpoints to resume training",
     )
     args = parser.parse_args()

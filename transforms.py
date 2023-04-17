@@ -131,9 +131,16 @@ class IBOTAugmentation(object):
                 normalize,
             ]
         )
+        # self.test_trans = transforms.Compose([
+        #     transforms.Resize(224),
+        #     transforms.CenterCrop(224),
+        #     transforms.ToTensor(),
+        # ])
 
     def __call__(self, image):
         crops = []
+        # crops.append(self.test_trans(image))
+        # return crops
         crops.append(self.global_transfo1(image))
         for _ in range(self.global_crops_number - 1):
             crops.append(self.global_transfo2(image))
