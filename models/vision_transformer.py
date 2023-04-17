@@ -193,6 +193,7 @@ class PatchEmbed(nn.Layer):
         self.proj = nn.Conv2D(
             in_chans, embed_dim, kernel_size=patch_size, stride=patch_size)
 
+        pass
     def forward(self, x):
         B, C, H, W = x.shape
         # assert H == self.img_size[0] and W == self.img_size[1], \
@@ -289,7 +290,7 @@ class VisionTransformer(nn.Layer):
         x = x + self.pos_embed
         
         x = self.pos_drop(x)
-        
+
         for blk in self.blocks:
             x = blk(x)
         x = self.norm(x)
