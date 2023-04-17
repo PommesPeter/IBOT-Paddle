@@ -168,6 +168,7 @@ class IBOTVisionTransformer(VisionTransformer):
         patch_pos_embed = patch_pos_embed.transpose((0, 2, 3, 1)).reshape((1, -1, dim))
         return paddle.concat((class_pos_embed.unsqueeze(0), patch_pos_embed), axis=1)
 
+
     def forward_features(self, x, mask=None, return_all_tokens=None):
         # B = x.shape[0]
         B, nc, w, h = x.shape
@@ -218,6 +219,30 @@ class IBOTVisionTransformer(VisionTransformer):
         x = paddle.where(mask.unsqueeze(-1), paddle.cast(self.masked_embed, x.dtype), x)
         x = paddle.transpose(x, perm=[0, 3, 1, 2])
         return x
+
+    def get_intermediate_layers(self, x, n=1,mask=None):
+
+        B, nc, w, h = x.shape
+        x = self.patch_embed(x)
+        # mask image modeling
+        if self.masked_im_modeling:
+            assert mask is not None
+            x = self.mask_model(x, mask)
+        x = x.flatten(2).transpose(perm=[0, 2, 1])
+
+        # add the [CLS] token to the embed patch tokens
+        cls_tokens = self.cls_token.expand((B, -1, -1)).astype(x.dtype)
+        x = paddle.concat((cls_tokens, x), axis=1)
+        x = x + self.interpolate_pos_encoding(x, w, h)
+        x = self.pos_drop(x)
+
+        # we return the output tokens from the `n` last blocks
+        output = []
+        for i, blk in enumerate(self.blocks):
+            x = blk(x)
+            if len(self.blocks) - i <= n:
+                output.append(self.norm(x))
+        return output
 
 
 class IBOTSwinTransformer(SwinTransformer):
