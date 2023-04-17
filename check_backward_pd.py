@@ -77,18 +77,18 @@ for p in teacher.parameters():
 same_dim = args.shared_head or args.shared_head_teacher
 ibot_loss = IBOTLoss(
     args.out_dim,
-        args.out_dim if same_dim else args.patch_out_dim,
-        args.global_crops_number,
-        args.local_crops_number,
-        args.warmup_teacher_temp,
-        args.teacher_temp,
-        args.warmup_teacher_patch_temp,
-        args.teacher_patch_temp,
-        args.warmup_teacher_temp_epochs,
-        args.epochs,
-        lambda1=args.lambda1,
-        lambda2=args.lambda2,
-        mim_start_epoch=args.pred_start_epoch,
+    args.out_dim if same_dim else args.patch_out_dim,
+    args.global_crops_number,
+    args.local_crops_number,
+    args.warmup_teacher_temp,
+    args.teacher_temp,
+    args.warmup_teacher_patch_temp,
+    args.teacher_patch_temp,
+    args.warmup_teacher_temp_epochs,
+    args.epochs,
+    lambda1=args.lambda1,
+    lambda2=args.lambda2,
+    mim_start_epoch=args.pred_start_epoch,
 )
 
 # ============ preparing optimizer ============
@@ -211,6 +211,7 @@ def backbone_one_epoch(epoch, data, reprod_log):
     reprod_log.add(f"patch_loss_epoch_{epoch}", patch_loss.detach().numpy())
 
     # student update
+    optimizer.clear_grad()
     loss.backward()
     utils.cancel_gradients_last_layer(epoch, student, args.freeze_last_layer)
 
@@ -224,7 +225,6 @@ def backbone_one_epoch(epoch, data, reprod_log):
     #         idx += 1
 
     optimizer.step()
-    optimizer.clear_grad()
 
     # EMA update for the teacher
     with paddle.no_grad():

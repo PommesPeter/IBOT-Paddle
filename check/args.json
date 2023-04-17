@@ -44,5 +44,7 @@
     "weight_decay_end": 0.4, 
     "window_size": 7, 
     "world_size": 16,
-    "drop_path": 0.1
+    "drop_path": 0.1,
+    "norm_in_head": null,
+    "shared_head_teacher": true
 }

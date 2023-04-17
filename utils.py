@@ -812,7 +812,7 @@ def get_args_parser():
     parser.add_argument('--num_workers', default=10, type=int, help='Number of data loading workers per GPU.')
     parser.add_argument("--local_rank", default=0, type=int, help="Please ignore and do not set this argument.")
     
-    return parser.parse_args()
+    return parser
 
 
 def get_args_from(path, args):
