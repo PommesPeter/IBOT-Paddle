@@ -11,6 +11,7 @@ from loss import IBOTLoss
 from models.ibot import IBOTHead, MultiCropWrapper
 from models.linear import LinearClassifier
 
+paddle.device.set_device("gpu")
 paddle.seed(10)
 
 # with open("../data/8_images.pkl", "rb") as f:
@@ -117,11 +118,11 @@ print("Loss, optimizer and schedulers ready.")
 # ============ optionally resume training ============
 to_restore = {"epoch": 0}
 utils.restart_from_checkpoint(
-    "/home/xiejunlin/workspace/IBOT-Paddle/check/ckpt/full_ckpt.pdparams",
+    "/home/xiejunlin/workspace/IBOT-Paddle/check/ckpt/full_ckpt_v2.pdparams",
     run_variables=to_restore,
     student=student,
     teacher=teacher,
-    optimizer=optimizer, # todo: need to load optimizer parameters
+    # optimizer=optimizer, # todo: need to load optimizer parameters
     ibot_loss=ibot_loss
 )
 start_epoch = 0
@@ -184,13 +185,13 @@ def backbone_one_epoch(epoch, data, reprod_log):
     student_local_cls = student(images[2:])[0] if len(images) > 2 else None
     student.backbone.masked_im_modeling = args.use_masked_im_modeling
     
-    # for i in range(2):
-    #     arr = teacher_bkb(data[i]).detach().numpy()
-    #     reprod_log.add(f"bkb_fea_{i}", arr)
+    for i in range(2):
+        arr = teacher_bkb(images[i]).detach().numpy()
+        reprod_log.add(f"bkb_tea_{i}", arr)
 
-    # for i in range(2, 12):
-    #     arr = student_bkb(data[i]).detach().numpy()
-    #     reprod_log.add(f"bkb_stu_{i}", arr)
+    for i in range(2, 12):
+        arr = student_bkb(images[i], mask=masks[i]).detach().numpy()
+        reprod_log.add(f"bkb_stu_{i}", arr)
 
     for i in range(len(teacher_output)):
         arr = teacher_output[i].detach().numpy()
@@ -363,7 +364,7 @@ def check_backbone_backward():
 
 
 if __name__ == "__main__":
-    log_lr()
+    # log_lr()
     # check_clf_backward()
     check_backbone_backward()
     # check_sub_m_out()

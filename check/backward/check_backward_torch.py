@@ -1,17 +1,27 @@
-import pickle
-from models.ibot import vit_small
-from utils import get_args_from, get_args_parser
-import utils
-from models.head import IBOTHead
-from loss import IBOTLoss
-from models.linear import LinearClassifier
-import torch
+import argparse
 import os
-from reprod_log import ReprodLogger
+import pickle
+import random
 import warnings
+
+import torch
+from reprod_log import ReprodLogger
+
+import utils
+# from evaluation.eval_linear import LinearClassifier
+from main_ibot import iBOTLoss
+from models.head import iBOTHead
+from models.vision_transformer import vit_small
+from utils import get_args_from
+from main_ibot import get_args_parser
+
 warnings.filterwarnings('ignore')
 import numpy as np
 
+torch.manual_seed(10)
+torch.cuda.manual_seed_all(10)
+np.random.seed(10)  # Numpy module.
+random.seed(10)  # Python random module.
 
 def restart_from_checkpoint(ckp_path, run_variables=None, **kwargs):
     """
@@ -50,50 +60,88 @@ def restart_from_checkpoint(ckp_path, run_variables=None, **kwargs):
 
 
 # load data
-with open("../data/8_images.pkl", "rb") as f:
-    images: list = pickle.load(f)
+batch_data = np.load("/home/xiejunlin/workspace/ibot/batch_data.npy", allow_pickle=True)
+
+images = [torch.tensor(it) for it in batch_data[0]]
+label = torch.tensor(batch_data[1])
+masks = [torch.tensor(it) for it in batch_data[2]]
+batch_data = tuple((images, label, masks))
+
+# with open("../data/8_images.pkl", "rb") as f:
+    # images: list = pickle.load(f)
 
 # convert to tensor
-images = [torch.tensor(it) for it in images]
+# images = [torch.tensor(it) for it in images]
 LEN_DATALOADER = 1
 
 # laod args
-args = get_args_from("./args.json", get_args_parser())
+args = get_args_from("/home/xiejunlin/workspace/IBOT-Paddle/check/args.json", get_args_parser())
 args.epochs = 40
+# parser = argparse.ArgumentParser('iBOT', parents=[args])
+# args = parser.parse_args()
 
 # build backbone
-student_bkb = vit_small(drop_path_rate=args.drop_path_rate).cuda()
-teacher_bkb = vit_small().cuda()
+student_bkb = vit_small(
+    patch_size=args.patch_size,
+    drop_path_rate=args.drop_path,
+    return_all_tokens=True,
+    masked_im_modeling=args.use_masked_im_modeling,
+).cuda()
+teacher_bkb = vit_small(
+    patch_size=args.patch_size,
+    return_all_tokens=True,
+).cuda()
 embed_dim = student_bkb.embed_dim
 utils.fix_random_seeds(10)
 
 # wrapper
-student = utils.MultiCropWrapper(student_bkb, DINOHead(
-    embed_dim,
-    args.out_dim,
-    use_bn=args.use_bn_in_head,
-    norm_last_layer=args.norm_last_layer,
+student = utils.MultiCropWrapper(
+    student_bkb, 
+    iBOTHead(
+        embed_dim,
+        args.out_dim,
+        patch_out_dim=args.patch_out_dim,
+        norm=args.norm_in_head,
+        act=args.act_in_head,
+        norm_last_layer=args.norm_last_layer,
+        shared_head=args.shared_head,
 ))
+
 teacher = utils.MultiCropWrapper(
     teacher_bkb,
-    DINOHead(embed_dim, args.out_dim, args.use_bn_in_head),
+    iBOTHead(
+        embed_dim, 
+        args.out_dim,
+        patch_out_dim=args.patch_out_dim,
+        norm=args.norm_in_head,
+        act=args.act_in_head,
+        shared_head=args.shared_head_teacher,
+    ),
 )
 # move networks to gpu
 student, teacher = student.cuda(), teacher.cuda()
 
 teacher_without_ddp = teacher
-teacher_without_ddp.load_state_dict(student.state_dict())
+teacher_without_ddp.load_state_dict(student.state_dict(), strict=False)
 # no backward on teacher
 for p in teacher.parameters():
     p.requires_grad = False
 
-dino_loss = DINOLoss(
+same_dim = args.shared_head or args.shared_head_teacher
+ibot_loss = iBOTLoss(
     args.out_dim,
-    args.local_crops_number + 2,  # total number of crops = 2 global crops + local_crops_number
+    args.out_dim if same_dim else args.patch_out_dim,
+    args.global_crops_number,
+    args.local_crops_number,
     args.warmup_teacher_temp,
     args.teacher_temp,
+    args.warmup_teacher_patch_temp,
+    args.teacher_patch_temp,
     args.warmup_teacher_temp_epochs,
     args.epochs,
+    lambda1=args.lambda1,
+    lambda2=args.lambda2,
+    mim_start_epoch=args.pred_start_epoch,
 ).cuda()
 
 params_groups = utils.get_params_groups(student)
@@ -116,13 +164,13 @@ momentum_schedule = utils.cosine_scheduler(
 
 to_restore = {"epoch": 0}
 restart_from_checkpoint(
-    "../weights/dino_deitsmall16_pretrain_full_checkpoint.pth",
+    "pretrained/checkpoint.pth",
     run_variables=to_restore,
     student=student,
     teacher=teacher,
-    optimizer=optimizer,
-    fp16_scaler=None,
-    dino_loss=dino_loss,
+    # optimizer=optimizer,
+    # fp16_scaler=None,
+    ibot_loss=ibot_loss,
 )
 start_epoch = 0
 
@@ -137,7 +185,7 @@ def log_state():
     for k, v in student_bkb.state_dict().items():
         bkb_log.add(f"stu_state_{i}", v.detach().cpu().numpy())
         i += 1
-    bkb_log.save("../reprod_out/th_bkb_state.npy")
+    bkb_log.save("./reprod_out/th_bkb_state.npy")
 
 
 def log_lr():
@@ -145,10 +193,22 @@ def log_lr():
     lr_log.add("lr", lr_schedule)
     lr_log.add("wd", wd_schedule)
     lr_log.add("momentum_schedule", momentum_schedule)
-    lr_log.save("../reprod_out/lr_th.npy")
+    lr_log.save("./reprod_out/lr_th.npy")
 
 
 def backbone_one_epoch(epoch, data, reprod_log):
+    images, labels, masks = data
+    names_q, params_q, names_k, params_k = [], [], [], []
+    for name_q, param_q in student.named_parameters():
+        names_q.append(name_q)
+        params_q.append(param_q)
+    for name_k, param_k in teacher_without_ddp.named_parameters():
+        names_k.append(name_k)
+        params_k.append(param_k)
+    names_common = list(set(names_q) & set(names_k))
+    params_q = [param_q for name_q, param_q in zip(names_q, params_q) if name_q in names_common]
+    params_k = [param_k for name_k, param_k in zip(names_k, params_k) if name_k in names_common]
+    
     it = LEN_DATALOADER * epoch + 0
     
     for i, param_group in enumerate(optimizer.param_groups):
@@ -156,17 +216,22 @@ def backbone_one_epoch(epoch, data, reprod_log):
         # if i == 0:  # only the first group is regularized
         #     param_group["weight_decay"] = wd_schedule[it]
 
-    images = [it.cuda(non_blocking=True) for it in data]
-    teacher_output = teacher(images[:2])    
-    student_output = student(images)
+    images = [it.cuda(non_blocking=True) for it in images]
+    masks = [it.cuda(non_blocking=True) for it in masks]
+    teacher_output = teacher(images[:2])
+    student_output = student(images[:2], mask=masks[:2])
 
-    # for i in range(2):
-    #     arr = teacher_bkb(images[i]).detach().cpu().numpy()
-    #     reprod_log.add(f"bkb_fea_{i}", arr)
-    #
-    # for i in range(2, 12):
-    #     arr = student_bkb(images[i]).detach().cpu().numpy()
-    #     reprod_log.add(f"bkb_stu_{i}", arr)
+    student.backbone.masked_im_modeling = False
+    student_local_cls = student(images[2:])[0] if len(images) > 2 else None
+    student.backbone.masked_im_modeling = args.use_masked_im_modeling
+    
+    for i in range(2):
+        arr = teacher_bkb(images[i]).detach().cpu().numpy()
+        reprod_log.add(f"bkb_tea_{i}", arr)
+    
+    for i in range(2, 12):
+        arr = student_bkb(images[i], mask=masks[i]).detach().cpu().numpy()
+        reprod_log.add(f"bkb_stu_{i}", arr)
 
     for i in range(len(teacher_output)):
         arr = teacher_output[i].detach().cpu().numpy()
@@ -176,9 +241,15 @@ def backbone_one_epoch(epoch, data, reprod_log):
         arr = student_output[i].detach().cpu().numpy()
         reprod_log.add(f"stu_out_{i}", arr)
 
-    loss = dino_loss(student_output, teacher_output, epoch)
-    reprod_log.add(f"center_epoch_{epoch}", dino_loss.center.detach().cpu().numpy())
+    all_loss = ibot_loss(student_output, teacher_output, student_local_cls, masks, epoch)
+    loss = all_loss.pop("loss")
+    cls_loss = all_loss.pop("cls")
+    patch_loss = all_loss.pop("patch")
+    
+    reprod_log.add(f"center_epoch_{epoch}", ibot_loss.center.detach().cpu().numpy())
     reprod_log.add(f"loss_epoch_{epoch}", loss.detach().cpu().numpy())
+    reprod_log.add(f"cls_loss_epoch_{epoch}", cls_loss.detach().cpu().numpy())
+    reprod_log.add(f"patch_loss_epoch_{epoch}", patch_loss.detach().cpu().numpy())
 
     optimizer.zero_grad()
     loss.backward()
@@ -225,130 +296,129 @@ def backbone_one_epoch(epoch, data, reprod_log):
     # EMA update for the teacher
     with torch.no_grad():
         m = momentum_schedule[it]  # momentum parameter
-        for param_q, param_k in zip(student.parameters(), teacher_without_ddp.parameters()):
+        for param_q, param_k in zip(params_q, params_k):
             param_k.data.mul_(m).add_((1 - m) * param_q.detach().data)
 
     print(f"epoch: {epoch}, loss: {loss.item()}")
 
 
-# ============================================================
-num_labels = 1000
-lr = 0.01
-batch_size = 1024
-epochs = 40
-last_blocks = 4
+# ================ Linear Classifier =================
+# num_labels = 1000
+# lr = 0.01
+# batch_size = 1024
+# epochs = 40
+# last_blocks = 4
 
-linear_classifier = LinearClassifier(embed_dim * last_blocks, num_labels=num_labels).cuda()
-# set optimizer
-clf_opt = torch.optim.SGD(
-    linear_classifier.parameters(),
-    lr * batch_size / 256., # linear scaling rule
-    momentum=0.9,
-    weight_decay=0, # we do not apply weight decay
-)
-scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(clf_opt, epochs, eta_min=0)
-model = vit_small(patch_size=16)
-utils.load_pretrained_weights(
-    model,
-    "../weights/dino_deitsmall16_pretrain_full_checkpoint.pth",
-    "teacher",
-    "vit_small",
-    16
-)
-lin_state = torch.load("../weights/dino_deitsmall16_linearweights.pth")['state_dict']
-lin_state = {k.replace("module.", "") : v for k, v in lin_state.items()}
-linear_classifier.load_state_dict(lin_state)
+# linear_classifier = LinearClassifier(embed_dim * last_blocks, num_labels=num_labels).cuda()
+# # set optimizer
+# clf_opt = torch.optim.SGD(
+#     linear_classifier.parameters(),
+#     lr * batch_size / 256., # linear scaling rule
+#     momentum=0.9,
+#     weight_decay=0, # we do not apply weight decay
+# )
+# scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(clf_opt, epochs, eta_min=0)
+# model = vit_small(patch_size=16)
+# utils.load_pretrained_weights(
+#     model,
+#     "pretrained/ibot_vits_16_eval_linear.pth",
+#     "teacher",
+#     "vit_small",
+#     16
+# )
+# lin_state = torch.load("pretrained/ibot_vits_16_eval_linear.pth")['state_dict']
+# lin_state = {k.replace("module.", "") : v for k, v in lin_state.items()}
+# linear_classifier.load_state_dict(lin_state)
 
-model.cuda()
-model.eval()
+# model.cuda()
+# model.eval()
 
-label = np.load("../data/8_labels.npy")
-label = torch.tensor(label).cuda()
+# # label = np.load("../data/8_labels.npy")
+# # label = torch.tensor(label).cuda()
 
-hook_module_idx = 0  # used for logger
+# hook_module_idx = 0  # used for logger
+
+# def check_sub_m_out():
+#     main_log = ReprodLogger()
+
+#     def clf_one_epoch(epoch, data):
+#         images = data[0].cuda(non_blocking=True)
+
+#         # forward
+#         with torch.no_grad():
+#             intermediate_output = model.get_intermediate_layers(images, last_blocks)
+#             output = torch.cat([x[:, 0] for x in intermediate_output], dim=-1)
+#             main_log.add(f"output_epoch_{epoch}", output.detach().cpu().numpy())
+
+#     for epoch in range(5):
+
+#         def hook(module, input, output):
+#             global hook_module_idx
+#             if isinstance(output, tuple):
+#                 for it in output:
+#                     main_log.add(f"module_{hook_module_idx}", it.detach().cpu().numpy())
+#             else:
+#                 main_log.add(f"module_{hook_module_idx}", output.detach().cpu().numpy())
+#             hook_module_idx += 1
+
+#         handles = []
+#         # set hooks
+#         handles.append(model.patch_embed.register_forward_hook(hook))
+#         handles.append(model.blocks[0].register_forward_hook(hook))
+#         handles.append(model.blocks[5].register_forward_hook(hook))
+#         handles.append(model.blocks[11].register_forward_hook(hook))
+
+#         clf_one_epoch(epoch, images)
+
+#         # remove handle
+#         for hd in handles:
+#             hd.remove()
+
+#     main_log.save("./reprod_out/sub_m_th.npy")
 
 
-def check_sub_m_out():
-    main_log = ReprodLogger()
+# def check_clf_backward():
+#     lr_log = ReprodLogger()
+#     main_log = ReprodLogger()
 
-    def clf_one_epoch(epoch, data):
-        images = data[0].cuda(non_blocking=True)
+#     def clf_one_epoch(epoch, data):
+#         linear_classifier.train()
+#         images = data[0].cuda(non_blocking=True)
+#         lr_log.add(f"lr_epoch_{epoch}", np.array([clf_opt.param_groups[0]['lr']]))
 
-        # forward
-        with torch.no_grad():
-            intermediate_output = model.get_intermediate_layers(images, last_blocks)
-            output = torch.cat([x[:, 0] for x in intermediate_output], dim=-1)
-            main_log.add(f"output_epoch_{epoch}", output.detach().cpu().numpy())
+#         # forward
+#         with torch.no_grad():
+#             intermediate_output = model.get_intermediate_layers(images, last_blocks)
+#             output = torch.cat([x[:, 0] for x in intermediate_output], dim=-1)
 
-    for epoch in range(5):
+#         output = linear_classifier(output)
+#         main_log.add(f"output_epoch_{epoch}", output.detach().cpu().numpy())
+#         main_log.add(f"pred_epoch_{epoch}", output.detach().cpu().numpy().max(axis=1))
 
-        def hook(module, input, output):
-            global hook_module_idx
-            if isinstance(output, tuple):
-                for it in output:
-                    main_log.add(f"module_{hook_module_idx}", it.detach().cpu().numpy())
-            else:
-                main_log.add(f"module_{hook_module_idx}", output.detach().cpu().numpy())
-            hook_module_idx += 1
+#         # compute cross entropy loss
+#         loss = torch.nn.CrossEntropyLoss()(output, label)
+#         print(f"epoch: {epoch}, loss: {loss.item()}")
+#         main_log.add(f"loss_epoch_{epoch}", loss.detach().cpu().numpy())
 
-        handles = []
-        # set hooks
-        handles.append(model.patch_embed.register_forward_hook(hook))
-        handles.append(model.blocks[0].register_forward_hook(hook))
-        handles.append(model.blocks[5].register_forward_hook(hook))
-        handles.append(model.blocks[11].register_forward_hook(hook))
+#         # compute the gradients
+#         clf_opt.zero_grad()
+#         loss.backward()
 
-        clf_one_epoch(epoch, images)
+#         # grad
+#         iter = linear_classifier.parameters().__iter__()
+#         idx = 0
+#         for p in iter:
+#             main_log.add(f"grad_{idx}_epoch_{epoch}", p.grad.detach().cpu().numpy())
+#             idx += 1
 
-        # remove handle
-        for hd in handles:
-            hd.remove()
+#         # step
+#         clf_opt.step()
 
-    main_log.save("../reprod_out/sub_m_th.npy")
+#     for epoch in range(5):
+#         clf_one_epoch(epoch, images)
 
-
-def check_clf_backward():
-    lr_log = ReprodLogger()
-    main_log = ReprodLogger()
-
-    def clf_one_epoch(epoch, data):
-        linear_classifier.train()
-        images = data[0].cuda(non_blocking=True)
-        lr_log.add(f"lr_epoch_{epoch}", np.array([clf_opt.param_groups[0]['lr']]))
-
-        # forward
-        with torch.no_grad():
-            intermediate_output = model.get_intermediate_layers(images, last_blocks)
-            output = torch.cat([x[:, 0] for x in intermediate_output], dim=-1)
-
-        output = linear_classifier(output)
-        main_log.add(f"output_epoch_{epoch}", output.detach().cpu().numpy())
-        main_log.add(f"pred_epoch_{epoch}", output.detach().cpu().numpy().max(axis=1))
-
-        # compute cross entropy loss
-        loss = torch.nn.CrossEntropyLoss()(output, label)
-        print(f"epoch: {epoch}, loss: {loss.item()}")
-        main_log.add(f"loss_epoch_{epoch}", loss.detach().cpu().numpy())
-
-        # compute the gradients
-        clf_opt.zero_grad()
-        loss.backward()
-
-        # grad
-        iter = linear_classifier.parameters().__iter__()
-        idx = 0
-        for p in iter:
-            main_log.add(f"grad_{idx}_epoch_{epoch}", p.grad.detach().cpu().numpy())
-            idx += 1
-
-        # step
-        clf_opt.step()
-
-    for epoch in range(5):
-        clf_one_epoch(epoch, images)
-
-    lr_log.save("../reprod_out/clf_lr_th.npy")
-    main_log.save("../reprod_out/clf_log_th.npy")
+#     lr_log.save("./reprod_out/clf_lr_th.npy")
+#     main_log.save("./reprod_out/clf_log_th.npy")
 
 
 def check_backbone_backward():
@@ -358,11 +428,12 @@ def check_backbone_backward():
 
     reprod_log = ReprodLogger()
     for epoch in range(10):
-        backbone_one_epoch(epoch, images, reprod_log)
-    reprod_log.save(f"../reprod_out/th_backward.npy")
+        backbone_one_epoch(epoch, batch_data, reprod_log)
+    reprod_log.save(f"./reprod_out/th_backward.npy")
 
 
 if __name__ == "__main__":
+    # log_lr()
     # check_clf_backward()
     check_backbone_backward()
     # check_sub_m_out()
