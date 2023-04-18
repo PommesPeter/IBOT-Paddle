@@ -179,7 +179,7 @@ class iBOTHead(DINOHead):
             self.last_norm2 = self.last_norm
 
     def forward(self, x):
-        tx = x
+
         if len(x.shape) == 2:
             return super(iBOTHead, self).forward(x)
 
@@ -196,4 +196,4 @@ class iBOTHead(DINOHead):
         if self.last_norm is not None:
             x1 = self.last_norm(x1)
             x2 = self.last_norm2(x2)
-        return x1, x2, tx
+        return x1, x2

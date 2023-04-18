@@ -254,9 +254,6 @@ def for_pass(args):
     paddle_fake_label_list = []
     paddle_fake_mask_list = []
 
-
-
-
     fake_label = np.arange(1).astype(np.int64)
     for _ in range(0, 12):
         fake_data = np.random.rand(64, 3, 224, 224).astype(np.float32) - 0.5
@@ -280,25 +277,25 @@ def for_pass(args):
     reprod_logger.save(os.path.join(args.output_dir, "data_torch.npy"))
 
     with torch.no_grad():
-        out_save,bk_f = student(torch_fake_data_list, torch_fake_mask_list)
+        out_save = student(torch_fake_data_list, torch_fake_mask_list)
         reprod_logger.add("logits", out_save[0].cpu().detach().numpy())
         reprod_logger.save(os.path.join(args.output_dir,"forward_torch.npy"))
-        reprod_logger = ReprodLogger()
-        reprod_logger.add("logits", bk_f.cpu().detach().numpy())
-        reprod_logger.save(os.path.join(args.output_dir, "student_mid_forward_torch.npy"))
+        # reprod_logger = ReprodLogger()
+        # reprod_logger.add("logits", bk_f.cpu().detach().numpy())
+        # reprod_logger.save(os.path.join(args.output_dir, "student_mid_forward_torch.npy"))
 
-        out_save,bk_f = teacher(torch_fake_data_list)
+        out_save = teacher(torch_fake_data_list)
         reprod_logger = ReprodLogger()
         reprod_logger.add("logits", out_save[0].cpu().detach().numpy())
         reprod_logger.save(os.path.join(args.output_dir,"teacher_forward_torch.npy"))
-        reprod_logger = ReprodLogger()
-        reprod_logger.add("logits", bk_f.cpu().detach().numpy())
-        reprod_logger.save(os.path.join(args.output_dir, "teacher_mid_forward_torch.npy"))
+        # reprod_logger = ReprodLogger()
+        # reprod_logger.add("logits", bk_f.cpu().detach().numpy())
+        # reprod_logger.save(os.path.join(args.output_dir, "teacher_mid_forward_torch.npy"))
 
-        teacher_output,_ = teacher(torch_fake_data_list[:2])
-        student_output,_ = student(torch_fake_data_list[:2],mask=torch_fake_mask_list[:2])
+        teacher_output = teacher(torch_fake_data_list[:2])
+        student_output = student(torch_fake_data_list[:2],mask=torch_fake_mask_list[:2])
         student.backbone.masked_im_modeling = False
-        student_local_cls = student(torch_fake_data_list[2:])[0][0] if len(torch_fake_data_list)>2 else None
+        student_local_cls = student(torch_fake_data_list[2:])[0] if len(torch_fake_data_list)>2 else None
 
         all_loss = ibot_loss(student_output, teacher_output, student_local_cls, torch_fake_mask_list[2:], 2)
         loss = all_loss.pop('loss')

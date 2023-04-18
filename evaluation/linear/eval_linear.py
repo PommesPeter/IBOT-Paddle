@@ -116,7 +116,6 @@ def eval_linear(args):
     utils.load_pretrained_weights(
         model, args.pretrained_weights, args.checkpoint_key, args.arch, args.patch_size
     )
-
     if "swin" in args.arch:
         num_features = []
         for i, d in enumerate(model.depths):
