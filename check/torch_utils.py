@@ -89,7 +89,7 @@ class Torch_MultiCropWrapper(nn.Module):
                 inp_m = torch.cat(mask[start_idx: end_idx])
                 kwargs.update(dict(mask=inp_m))
 
-            _out,record = self.backbone(inp_x, **kwargs)
+            _out = self.backbone(inp_x, **kwargs)
             if start_idx == 0:
                 output = _out
             else:
@@ -99,7 +99,7 @@ class Torch_MultiCropWrapper(nn.Module):
         output_ = self.head(output)
         if return_backbone_feat:
             return output, output_
-        return output_,record
+        return output_
 
 
 class DataAugmentationiBOT(object):
@@ -298,8 +298,8 @@ class iBOTLoss(nn.Module):
         """
         Cross-entropy between softmax outputs of the teacher and student networks.
         """
-        student_cls, student_patch,_ = student_output
-        teacher_cls, teacher_patch,_ = teacher_output
+        student_cls, student_patch = student_output
+        teacher_cls, teacher_patch = teacher_output
 
         if student_local_cls is not None:
             student_cls = torch.cat([student_cls, student_local_cls])

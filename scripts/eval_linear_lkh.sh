@@ -1,2 +1,3 @@
-python eval_linear.py --patch_size 16 --data_path /data3/linkaihao/dataset/mini-imagenet-1k --pretrained_weights /data3/linkaihao/reproduce/IBOT-Paddle/output/ibot_vit_small_pretrain_checkpoint0160.pdparams --checkpoint_key teacher --batch_size_per_gpu 128 --lr 0.01 --output_dir /data3/linkaihao/reproduce/IBOT-Paddle/output_linear
-#    ./run.sh imagenet_linear_solo mini_linear vit_small teacher 1 --data_path  /data1/linkaihao/dataset/mini-imagenet-1k --pretrained_weights /data1/linkaihao/reproduce/ibot/work_dirs/mini_pre`train_2/checkpoint0160.pth --lr 0.01
+python -m paddle.distributed.launch --gpus="0,7" evaluation/linear/eval_linear.py --patch_size 16 --data_path /data3/linkaihao/dataset/mini-imagenet-1k --pretrained_weights /data3/linkaihao/reproduce/IBOT-Paddle/check/duiqi/teacher.pdparams --checkpoint_key teacher --batch_size_per_gpu 128 --lr 0.01 --output_dir /data3/linkaihao/reproduce/IBOT-Paddle/output_linear_raw_imagenet
+
+

@@ -267,10 +267,6 @@ if __name__ == "__main__":
     paddle_fake_label_list = []
     paddle_fake_mask_list = []
 
-
-
-
-
     # fake_mask = np.random.rand(1, 3, 14, 14) > 0.5
     fake_label = np.arange(1).astype(np.int64)
     for _ in range(0, 12):
@@ -305,25 +301,25 @@ if __name__ == "__main__":
 
     with paddle.no_grad():
 
-        out_save,bk = student(paddle_fake_data_list,mask=paddle_fake_mask_list)
+        out_save = student(paddle_fake_data_list,mask=paddle_fake_mask_list)
         reprod_logger.add("logits", out_save[0].cpu().detach().numpy())
         reprod_logger.save(os.path.join(args.output_dir,"forward_paddle.npy"))
-        reprod_logger.add("logits", bk.cpu().detach().numpy())
-        reprod_logger.save(os.path.join(args.output_dir, "student_mid_forward_paddle.npy"))
+        # reprod_logger.add("logits", bk.cpu().detach().numpy())
+        # reprod_logger.save(os.path.join(args.output_dir, "student_mid_forward_paddle.npy"))
 
         reprod_logger = ReprodLogger()
-        out_save,bk = teacher(paddle_fake_data_list)
+        out_save = teacher(paddle_fake_data_list)
         reprod_logger.add("logits", out_save[0].cpu().detach().numpy())
         reprod_logger.save(os.path.join(args.output_dir,"teacher_forward_paddle.npy"))
 
-        reprod_logger.add("logits", bk.cpu().detach().numpy())
-        reprod_logger.save(os.path.join(args.output_dir, "teacher_mid_forward_paddle.npy"))
+        # reprod_logger.add("logits", bk.cpu().detach().numpy())
+        # reprod_logger.save(os.path.join(args.output_dir, "teacher_mid_forward_paddle.npy"))
 
 
-        teacher_output,_ = teacher(paddle_fake_data_list[:2])
-        student_output,_ = student(paddle_fake_data_list[:2], mask=paddle_fake_mask_list[:2])
+        teacher_output = teacher(paddle_fake_data_list[:2])
+        student_output = student(paddle_fake_data_list[:2], mask=paddle_fake_mask_list[:2])
         student.backbone.masked_im_modeling = False
-        student_local_cls = student(paddle_fake_data_list[2:])[0][0] if len(paddle_fake_data_list) > 2 else None
+        student_local_cls = student(paddle_fake_data_list[2:])[0] if len(paddle_fake_data_list) > 2 else None
         all_loss = ibot_loss(student_output, teacher_output, student_local_cls, paddle_fake_mask_list[2:], 2)
         loss = all_loss.pop('loss')
         print(loss.cpu().detach().numpy())
@@ -343,20 +339,20 @@ if __name__ == "__main__":
     diff_helper.compare_info(torch_info, paddle_info)
     diff_helper.report(path=os.path.join(args.output_dir,"forward_diff.log"))
 
-    torch_info = diff_helper.load_info(os.path.join(args.output_dir, "student_mid_forward_torch.npy"))
-    paddle_info = diff_helper.load_info(os.path.join(args.output_dir, "student_mid_forward_paddle.npy"))
-    diff_helper.compare_info(torch_info, paddle_info)
-    diff_helper.report(path=os.path.join(args.output_dir, "forward_diff.log"))
+    # torch_info = diff_helper.load_info(os.path.join(args.output_dir, "student_mid_forward_torch.npy"))
+    # paddle_info = diff_helper.load_info(os.path.join(args.output_dir, "student_mid_forward_paddle.npy"))
+    # diff_helper.compare_info(torch_info, paddle_info)
+    # diff_helper.report(path=os.path.join(args.output_dir, "forward_diff.log"))
 
     torch_info = diff_helper.load_info(os.path.join(args.output_dir,"teacher_forward_torch.npy"))
     paddle_info = diff_helper.load_info(os.path.join(args.output_dir,"teacher_forward_paddle.npy"))
     diff_helper.compare_info(torch_info, paddle_info)
     diff_helper.report(path=os.path.join(args.output_dir,"forward_diff.log"))
 
-    torch_info = diff_helper.load_info(os.path.join(args.output_dir, "teacher_mid_forward_torch.npy"))
-    paddle_info = diff_helper.load_info(os.path.join(args.output_dir, "teacher_mid_forward_paddle.npy"))
-    diff_helper.compare_info(torch_info, paddle_info)
-    diff_helper.report(path=os.path.join(args.output_dir, "forward_diff.log"))
+    # torch_info = diff_helper.load_info(os.path.join(args.output_dir, "teacher_mid_forward_torch.npy"))
+    # paddle_info = diff_helper.load_info(os.path.join(args.output_dir, "teacher_mid_forward_paddle.npy"))
+    # diff_helper.compare_info(torch_info, paddle_info)
+    # diff_helper.report(path=os.path.join(args.output_dir, "forward_diff.log"))
 
     torch_info = diff_helper.load_info(os.path.join(args.output_dir,"loss_torch.npy"))
     paddle_info = diff_helper.load_info(os.path.join(args.output_dir,"loss_paddle.npy"))
