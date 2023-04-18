@@ -118,6 +118,7 @@ print("Loss, optimizer and schedulers ready.")
 # ============ optionally resume training ============
 to_restore = {"epoch": 0}
 utils.restart_from_checkpoint(
+    # "/home/xiejunlin/workspace/IBOT-Paddle/check/ckpt/full_ckpt_weight_gv_key_v3.pdparams",
     "/home/xiejunlin/workspace/IBOT-Paddle/check/ckpt/full_ckpt_v2.pdparams",
     run_variables=to_restore,
     student=student,

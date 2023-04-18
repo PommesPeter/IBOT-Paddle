@@ -169,10 +169,10 @@ class IBOTVisionTransformer(VisionTransformer):
         return paddle.concat((class_pos_embed.unsqueeze(0), patch_pos_embed), axis=1)
 
 
-    def forward_features(self, x, mask=None, return_all_tokens=None):
+    def forward_features(self, x, mask=None, return_all_tokens=None, reprod_log=None):
         # B = x.shape[0]
         B, nc, w, h = x.shape
-        x= self.patch_embed(x)
+        x = self.patch_embed(x)
         # debug 对齐: tx = x
         # x = paddle.transpose(x, perm=[0, 2, 1])
         # C,N,HW = x.shape
