@@ -20,9 +20,10 @@ paddle.seed(10)
 
 # convert to tensor
 batch_data = np.load("/home/xiejunlin/workspace/ibot/batch_data.npy", allow_pickle=True)
-images = [paddle.to_tensor(it) for it in batch_data[0]]
+bs = 16
+images = [paddle.to_tensor(it[:bs, :]) for it in batch_data[0]]
 label = paddle.to_tensor(batch_data[1])
-masks = [paddle.to_tensor(it) for it in batch_data[2]]
+masks = [paddle.to_tensor(it[:bs, :]) for it in batch_data[2]]
 batch_data = tuple((images, label, masks))
 LEN_DATALOADER = 1
 
@@ -186,13 +187,13 @@ def backbone_one_epoch(epoch, data, reprod_log):
     student_local_cls = student(images[2:])[0] if len(images) > 2 else None
     student.backbone.masked_im_modeling = args.use_masked_im_modeling
     
-    for i in range(2):
-        arr = teacher_bkb(images[i]).detach().numpy()
-        reprod_log.add(f"bkb_tea_{i}", arr)
+    # for i in range(2):
+    #     arr = teacher_bkb(images[i]).detach().numpy()
+    #     reprod_log.add(f"bkb_tea_{i}", arr)
 
-    for i in range(2, 12):
-        arr = student_bkb(images[i], mask=masks[i]).detach().numpy()
-        reprod_log.add(f"bkb_stu_{i}", arr)
+    # for i in range(2, 12):
+    #     arr = student_bkb(images[i], mask=masks[i]).detach().numpy()
+    #     reprod_log.add(f"bkb_stu_{i}", arr)
 
     for i in range(len(teacher_output)):
         arr = teacher_output[i].detach().numpy()
