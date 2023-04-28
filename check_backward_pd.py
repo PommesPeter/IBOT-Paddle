@@ -95,7 +95,8 @@ ibot_loss = IBOTLoss(
 
 # ============ preparing optimizer ============
 params_groups = utils.get_params_groups(student)
-optimizer = paddle.optimizer.AdamW(learning_rate=args.lr, parameters=params_groups)
+# optimizer = paddle.optimizer.AdamW(learning_rate=args.lr, parameters=params_groups)
+optimizer = paddle.optimizer.SGD(learning_rate=args.lr, parameters=params_groups)
 
 # ============ init schedulers ... ============
 lr_schedule = utils.cosine_scheduler(

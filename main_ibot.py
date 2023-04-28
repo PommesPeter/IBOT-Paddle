@@ -33,6 +33,7 @@ from evaluation.unsupervised.unsup_cls import eval_pred
 from loss import IBOTLoss
 from models import IBOTHead, MultiCropWrapper
 from transforms import IBOTAugmentation
+from utils import get_args_parser
 
 
 def train_ibot(args):
@@ -219,7 +220,7 @@ def train_ibot(args):
             'args': args,
             'ibot_loss': ibot_loss.state_dict(),
         }
-        print(opt.state_dict().keys())
+        # print(opt.state_dict().keys())
 
         if fp16_scaler is not None:
             save_dict['fp16_scaler'] = fp16_scaler.state_dict()
