@@ -33,7 +33,6 @@ from evaluation.unsupervised.unsup_cls import eval_pred
 from loss import IBOTLoss
 from models import IBOTHead, MultiCropWrapper
 from transforms import IBOTAugmentation
-from utils import get_args_parser
 
 
 def train_ibot(args):
@@ -126,9 +125,9 @@ def train_ibot(args):
         )
     )
     # vit_s8 and vit_s16 are batch norm free models. here, we don't check bn
-    # if utils.has_batchnorms(student):
-        # student = nn.SyncBatchNorm.convert_sync_batchnorm(student)
-        # teacher = nn.SyncBatchNorm.convert_sync_batchnorm(teacher)
+    if utils.has_batchnorms(student):
+        student = nn.SyncBatchNorm.convert_sync_batchnorm(student)
+        teacher = nn.SyncBatchNorm.convert_sync_batchnorm(teacher)
     teacher = paddle.DataParallel(teacher)
     teacher_without_ddp = teacher._layers
     
