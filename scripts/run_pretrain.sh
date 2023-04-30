@@ -1,4 +1,10 @@
-python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" main_ibot.py \
+#!/usr/bin/env bash
+
+MASTER_ADDR=121.48.161.104:52100
+NUM_NODES=2
+
+python -m paddle.distributed.launch \
+    --gpus="0,1,2,3,4,5,6,7" --master=127.0.0.1:52100 --nnodes=$NUM_NODES --nproc_per_node=8 main_ibot.py \
     --act_in_head 'gelu' \
     --arch 'vit_small' \
     --batch_size_per_gpu 64 \
@@ -40,4 +46,4 @@ python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" main_ibot.py \
     --warmup_teacher_temp_epochs 30 \
     --weight_decay 0.04 \
     --weight_decay_end 0.4 \
-    --window_size 7;
+    --window_size 7
